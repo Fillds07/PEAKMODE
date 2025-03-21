@@ -1,12 +1,7 @@
-import { Tabs } from 'expo-router';
 import React from 'react';
-import { Platform } from 'react-native';
-
-import { HapticTab } from '@/components/HapticTab';
-import { IconSymbol } from '@/components/ui/IconSymbol';
-import TabBarBackground from '@/components/ui/TabBarBackground';
-import { Colors } from '@/constants/Colors';
-import { useColorScheme } from '@/hooks/useColorScheme';
+import { Tabs } from 'expo-router';
+import { useColorScheme } from 'react-native';
+import { Icon } from '@rneui/themed';
 
 export default function TabLayout() {
   const colorScheme = useColorScheme();
@@ -14,31 +9,76 @@ export default function TabLayout() {
   return (
     <Tabs
       screenOptions={{
-        tabBarActiveTintColor: Colors[colorScheme ?? 'light'].tint,
+        tabBarActiveTintColor: '#DAA520',
+        tabBarInactiveTintColor: '#999',
+        tabBarLabelStyle: {
+          fontWeight: '500',
+        },
         headerShown: false,
-        tabBarButton: HapticTab,
-        tabBarBackground: TabBarBackground,
-        tabBarStyle: Platform.select({
-          ios: {
-            // Use a transparent background on iOS to show the blur effect
-            position: 'absolute',
-          },
-          default: {},
-        }),
       }}>
       <Tabs.Screen
         name="index"
         options={{
-          title: 'Home',
-          tabBarIcon: ({ color }) => <IconSymbol size={28} name="house.fill" color={color} />,
+          title: 'Supplements',
+          tabBarIcon: ({ color }) => (
+            <Icon name="healing" type="material" color={color} />
+          ),
         }}
+        listeners={({ navigation }) => ({
+          tabPress: (e) => {
+            // Import the screen directly
+            const SupplementStackScreen = require('../screens/SupplementStackScreen').default;
+            navigation.navigate('index', { screen: SupplementStackScreen });
+          },
+        })}
       />
       <Tabs.Screen
-        name="explore"
+        name="education"
         options={{
-          title: 'Explore',
-          tabBarIcon: ({ color }) => <IconSymbol size={28} name="paperplane.fill" color={color} />,
+          title: 'Learn',
+          tabBarIcon: ({ color }) => (
+            <Icon name="book-open-page-variant" type="material-community" color={color} />
+          ),
         }}
+        listeners={({ navigation }) => ({
+          tabPress: (e) => {
+            // Import the screen directly
+            const EducationScreen = require('../screens/EducationScreen').default;
+            navigation.navigate('education', { screen: EducationScreen });
+          },
+        })}
+      />
+      <Tabs.Screen
+        name="reminders"
+        options={{
+          title: 'Reminders',
+          tabBarIcon: ({ color }) => (
+            <Icon name="bell" type="font-awesome" color={color} />
+          ),
+        }}
+        listeners={({ navigation }) => ({
+          tabPress: (e) => {
+            // Import the screen directly
+            const ReminderScreen = require('../screens/ReminderScreen').default;
+            navigation.navigate('reminders', { screen: ReminderScreen });
+          },
+        })}
+      />
+      <Tabs.Screen
+        name="chat"
+        options={{
+          title: 'AI Assistant',
+          tabBarIcon: ({ color }) => (
+            <Icon name="chat" type="material" color={color} />
+          ),
+        }}
+        listeners={({ navigation }) => ({
+          tabPress: (e) => {
+            // Import the screen directly
+            const ChatbotScreen = require('../screens/ChatbotScreen').default;
+            navigation.navigate('chat', { screen: ChatbotScreen });
+          },
+        })}
       />
     </Tabs>
   );

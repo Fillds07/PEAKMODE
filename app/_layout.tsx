@@ -1,39 +1,69 @@
-import { DarkTheme, DefaultTheme, ThemeProvider } from '@react-navigation/native';
-import { useFonts } from 'expo-font';
+import React, { useEffect, useState } from 'react';
 import { Stack } from 'expo-router';
-import * as SplashScreen from 'expo-splash-screen';
+import AsyncStorage from '@react-native-async-storage/async-storage';
+import { useFonts } from 'expo-font';
+import { SplashScreen } from 'expo-router';
 import { StatusBar } from 'expo-status-bar';
-import { useEffect } from 'react';
-import 'react-native-reanimated';
+import { View } from 'react-native';
 
-import { useColorScheme } from '@/hooks/useColorScheme';
+export {
+  // Catch any errors thrown by the Layout component.
+  ErrorBoundary,
+} from 'expo-router';
+
+export const unstable_settings = {
+  // Ensure that reloading on `/modal` keeps a back button present.
+  initialRouteName: '/(tabs)',
+};
 
 // Prevent the splash screen from auto-hiding before asset loading is complete.
 SplashScreen.preventAutoHideAsync();
 
 export default function RootLayout() {
-  const colorScheme = useColorScheme();
-  const [loaded] = useFonts({
-    SpaceMono: require('../assets/fonts/SpaceMono-Regular.ttf'),
+  const [loaded, error] = useFonts({
+    // Add custom fonts here if needed
   });
 
+  const [isUserOnboarded, setIsUserOnboarded] = useState<boolean | null>(null);
+
   useEffect(() => {
-    if (loaded) {
+    // Check if user has completed onboarding
+    const checkOnboardingStatus = async () => {
+      try {
+        const onboardingComplete = await AsyncStorage.getItem('onboardingComplete');
+        setIsUserOnboarded(onboardingComplete === 'true');
+      } catch (error) {
+        console.error('Error checking onboarding status:', error);
+        setIsUserOnboarded(false);
+      }
+    };
+    
+    checkOnboardingStatus();
+  }, []);
+
+  // Expo Router uses Error Boundaries to catch errors in the navigation tree.
+  useEffect(() => {
+    if (error) throw error;
+  }, [error]);
+
+  useEffect(() => {
+    if (loaded && isUserOnboarded !== null) {
       SplashScreen.hideAsync();
     }
-  }, [loaded]);
+  }, [loaded, isUserOnboarded]);
 
-  if (!loaded) {
-    return null;
+  if (!loaded || isUserOnboarded === null) {
+    return <View />;
   }
 
   return (
-    <ThemeProvider value={colorScheme === 'dark' ? DarkTheme : DefaultTheme}>
+    <>
+      <StatusBar style="dark" />
       <Stack>
+        <Stack.Screen name="index" options={{ headerShown: false }} />
         <Stack.Screen name="(tabs)" options={{ headerShown: false }} />
-        <Stack.Screen name="+not-found" />
+        <Stack.Screen name="screens/OnboardingScreen" options={{ headerShown: false }} />
       </Stack>
-      <StatusBar style="auto" />
-    </ThemeProvider>
+    </>
   );
 }
