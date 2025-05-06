@@ -1,50 +1,78 @@
-# Welcome to your Expo app 👋
+# PEAKMODE Application
 
-This is an [Expo](https://expo.dev) project created with [`create-expo-app`](https://www.npmjs.com/package/create-expo-app).
+PEAKMODE is a mobile application designed to help users reach their peak performance by providing energy management, supplement tracking, and personalized wellness recommendations.
 
-## Get started
+## Project Structure
 
-1. Install dependencies
+This project follows a modern microservices architecture with separate frontend and backend codebases:
 
-   ```bash
-   npm install
-   ```
-
-2. Start the app
-
-   ```bash
-    npx expo start
-   ```
-
-In the output, you'll find options to open the app in a
-
-- [development build](https://docs.expo.dev/develop/development-builds/introduction/)
-- [Android emulator](https://docs.expo.dev/workflow/android-studio-emulator/)
-- [iOS simulator](https://docs.expo.dev/workflow/ios-simulator/)
-- [Expo Go](https://expo.dev/go), a limited sandbox for trying out app development with Expo
-
-You can start developing by editing the files inside the **app** directory. This project uses [file-based routing](https://docs.expo.dev/router/introduction).
-
-## Get a fresh project
-
-When you're ready, run:
-
-```bash
-npm run reset-project
+```
+PEAKMODE/
+├── frontend/     # React Native (Expo) mobile application
+├── backend/      # Node.js/Express API server
+└── README.md     # This file
 ```
 
-This command will move the starter code to the **app-example** directory and create a blank **app** directory where you can start developing.
+## Quick Start
 
-## Learn more
+From the project root, you can run both frontend and backend together:
 
-To learn more about developing your project with Expo, look at the following resources:
+```bash
+# Install all dependencies (root, frontend, and backend)
+npm run install:all
 
-- [Expo documentation](https://docs.expo.dev/): Learn fundamentals, or go into advanced topics with our [guides](https://docs.expo.dev/guides).
-- [Learn Expo tutorial](https://docs.expo.dev/tutorial/introduction/): Follow a step-by-step tutorial where you'll create a project that runs on Android, iOS, and the web.
+# Start both frontend and backend
+npm run dev
+```
 
-## Join the community
+This will start the backend server on port 5000 and launch the Expo development server for the frontend.
 
-Join our community of developers creating universal apps.
+## Development Setup
 
-- [Expo on GitHub](https://github.com/expo/expo): View our open source platform and contribute.
-- [Discord community](https://chat.expo.dev): Chat with Expo users and ask questions.
+### Frontend (Expo App)
+
+```bash
+# Navigate to frontend directory
+cd frontend
+
+# Install dependencies
+npm install
+
+# Start the development server
+npm start
+```
+
+### Backend (Express API)
+
+```bash
+# Navigate to backend directory
+cd backend
+
+# Install dependencies
+npm install
+
+# Create a .env file with required environment variables
+# (See backend/README.md for details)
+
+# Start the development server
+npm run dev
+```
+
+## Running Individual Parts
+
+The root package.json provides these commands:
+
+- `npm run frontend` - Run only the frontend (Expo app)
+- `npm run backend` - Run only the backend server
+- `npm run dev` - Run both simultaneously 
+- `npm run install:all` - Install all dependencies
+- `npm run install:frontend` - Install only frontend dependencies
+- `npm run install:backend` - Install only backend dependencies
+
+## API Documentation
+
+The backend API provides authentication and data services for the frontend. For detailed API documentation, see [backend/README.md](backend/README.md).
+
+## License
+
+[MIT](LICENSE)
