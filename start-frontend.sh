@@ -1,17 +1,24 @@
 #!/bin/bash
 
-# Go to the frontend directory and start the server
-cd "$(dirname "$0")/frontend"
-echo "Starting frontend server..."
+# Colors for better visibility
+GREEN='\033[0;32m'
+BLUE='\033[0;34m'
+NC='\033[0m' # No Color
 
-# Check if there's already an Expo process running
-EXPO_PID=$(ps aux | grep "expo start" | grep -v grep | awk '{print $2}')
-if [ ! -z "$EXPO_PID" ]; then
-  echo "Expo is already running (PID: $EXPO_PID). Stopping it..."
-  kill -9 $EXPO_PID
-  sleep 1
-  echo "Expo process stopped."
-fi
+echo -e "${GREEN}=== PEAKMODE - Starting Frontend Only ===${NC}"
+echo -e "${BLUE}This will start the Expo development server${NC}"
+echo -e "${BLUE}Look for the QR code in the output below${NC}"
+echo ""
 
-# Start expo
-npx expo start 
+# Change to frontend directory
+cd frontend
+
+# Determine local IP address for API host
+IP_ADDRESS=$(ipconfig getifaddr en0 || ipconfig getifaddr en1)
+echo "Using API host: $IP_ADDRESS"
+
+# Export the IP so app.config.js picks it up for API requests
+export EXPO_PUBLIC_API_HOST=$IP_ADDRESS
+
+# Start Expo in LAN mode (devices on same Wi-Fi can connect)
+npx expo start --lan 

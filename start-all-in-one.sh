@@ -3,10 +3,9 @@
 # Colors for better visibility
 GREEN='\033[0;32m'
 BLUE='\033[0;34m'
-RED='\033[0;31m'
 NC='\033[0m' # No Color
 
-echo -e "${GREEN}=== PEAKMODE - Starting Backend and MongoDB ===${NC}"
+echo -e "${GREEN}=== PEAKMODE - All Components in One Terminal ===${NC}"
 
 # Start MongoDB if not already running
 if ! brew services list | grep mongodb-community@7.0 | grep started > /dev/null; then
@@ -18,8 +17,15 @@ else
   echo -e "${GREEN}✓ MongoDB is already running${NC}"
 fi
 
-echo -e "${BLUE}Starting backend server...${NC}"
+echo -e "${BLUE}Starting backend and frontend...${NC}"
+echo -e "${GREEN}Press Ctrl+C to stop all services${NC}"
+echo ""
 
-# Change to backend directory and start the dev server
-cd backend
-npm run dev 
+# Use concurrently to run both services in the same terminal
+npx concurrently \
+  --kill-others \
+  --prefix "[{name}]" \
+  --names "BACKEND,FRONTEND" \
+  --prefix-colors "cyan.bold,green.bold" \
+  "cd backend && npm run dev" \
+  "cd frontend && npm start" 

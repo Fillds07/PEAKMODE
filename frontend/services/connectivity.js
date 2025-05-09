@@ -306,14 +306,18 @@ export const checkDatabaseConnectivity = async () => {
  * @returns {Promise<object>} Complete connectivity status
  */
 export const runConnectivityDiagnostics = async () => {
-  // For local development, we can simplify the diagnostic
-  const backendStatus = await checkBackendConnectivity(1, 2000);
-  
+  // For local development, check both internet and backend connectivity
+  const [internetStatus, backendStatus] = await Promise.all([
+    checkInternetConnectivity(),
+    checkBackendConnectivity(1, 2000)
+  ]);
+
   return {
     timestamp: new Date().toISOString(),
     device: {
       platform: Platform.OS,
-      version: Platform.Version
+      version: Platform.Version,
+      isConnected: internetStatus
     },
     backend: backendStatus,
     database: {
