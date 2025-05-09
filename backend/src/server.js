@@ -108,79 +108,26 @@ app.use((err, req, res, next) => {
 });
 
 /**
- * Connects to MongoDB with retry logic
- * @param {string} uri - MongoDB connection string
- * @param {object} options - Connection options
- * @param {number} retryCount - Number of retries
- * @returns {Promise} - Resolves when connected
- */
-const connectWithRetry = async (uri, options, retryCount = 5) => {
-  let lastError;
-  
-  for (let i = 0; i < retryCount; i++) {
-    try {
-      console.log(`MongoDB connection attempt ${i + 1} of ${retryCount}...`);
-      await mongoose.connect(uri, options);
-      console.log('✅ Successfully connected to MongoDB Atlas');
-      return;
-    } catch (error) {
-      console.error(`Failed connection attempt ${i + 1}:`, error.message);
-      lastError = error;
-      // Exponential backoff: 1s, 2s, 4s, 8s, 16s
-      const delay = Math.pow(2, i) * 1000;
-      console.log(`Retrying in ${delay}ms...`);
-      await new Promise(resolve => setTimeout(resolve, delay));
-    }
-  }
-  
-  // After all retries failed
-  throw lastError;
-};
-
-/**
  * MongoDB Connection and Server Startup
  */
 const startServer = async () => {
   try {
-    // Get MongoDB URI from environment variables or use fallback direct connection
-    let mongoUri = process.env.MONGODB_URI;
+    // Default to local MongoDB if no environment variable
+    const mongoUri = process.env.MONGODB_URI || 'mongodb://localhost:27017/peakmode';
     
-    // If no environment variable is set, use a direct connection string to the replica set
-    if (!mongoUri) {
-      console.log('No MONGODB_URI environment variable found, using direct replica set connection');
-      mongoUri = "mongodb+srv://fillds07:Bluedream07@peakmode-cluster.zga2lm1.mongodb.net/peakmode?retryWrites=true&w=majority&authSource=admin&maxIdleTimeMS=45000&connectTimeoutMS=30000&socketTimeoutMS=60000";
-    }
+    // Log which database we're connecting to
+    const isLocal = mongoUri.includes('localhost') || mongoUri.includes('127.0.0.1');
+    console.log(`Connecting to ${isLocal ? 'local' : 'remote'} MongoDB database`);
     
-    console.log(`Using MongoDB connection string starting with: ${mongoUri.substring(0, mongoUri.indexOf('@') + 1)}***`);
-    
-    // Improved MongoDB connection options
+    // Simplified MongoDB connection options
     const mongoOptions = {
-      socketTimeoutMS: 60000,
-      connectTimeoutMS: 30000,
-      serverSelectionTimeoutMS: 60000,
-      maxPoolSize: 10,
-      minPoolSize: 0,
-      useNewUrlParser: true,
-      useUnifiedTopology: true,
-      directConnection: process.env.MONGODB_DIRECT_CONNECTION === 'true'
+      // These options are no longer needed in MongoDB driver v4+, but keeping them won't hurt
+      serverSelectionTimeoutMS: 5000 // Fail fast if MongoDB is not available
     };
     
-    // Connect to MongoDB with retry logic
-    console.log('Connecting to MongoDB Atlas...');
-    await connectWithRetry(mongoUri, mongoOptions);
-    
-    // Set up connection monitoring
-    mongoose.connection.on('disconnected', () => {
-      console.warn('MongoDB disconnected! Attempting to reconnect...');
-      // Reconnect if disconnected
-      connectWithRetry(mongoUri, mongoOptions).catch(err => {
-        console.error('Failed to reconnect to MongoDB:', err.message);
-      });
-    });
-    
-    mongoose.connection.on('error', (err) => {
-      console.error('MongoDB connection error:', err.message);
-    });
+    // Connect to MongoDB 
+    await mongoose.connect(mongoUri, mongoOptions);
+    console.log('✅ Successfully connected to MongoDB');
     
     // Start server on successful database connection
     app.listen(PORT, '0.0.0.0', () => {
@@ -190,36 +137,9 @@ const startServer = async () => {
     });
   } catch (error) {
     console.error('Failed to connect to MongoDB:', error.message);
-    
-    if (error.name === 'MongoServerSelectionError') {
-      console.error('Could not connect to any MongoDB server');
-      console.error('Error details:', error.message);
-      
-      if (error.reason) {
-        console.error('Reason type:', error.reason.type);
-        if (error.reason.servers) {
-          console.error('Server statuses:');
-          Object.entries(error.reason.servers).forEach(([host, info]) => {
-            console.error(` - ${host}: ${info.type || 'unknown'} (${info.error ? info.error.message : 'no error'})`);
-          });
-        }
-      }
-      
-      console.error('\nTROUBLESHOOTING STEPS:');
-      console.error('1. Check that your IP is whitelisted in MongoDB Atlas (https://cloud.mongodb.com > Network Access)');
-      console.error('2. Verify your VPC settings if using AWS');
-      console.error('3. Check MongoDB Atlas status page: https://status.mongodb.com/');
-      console.error('4. Verify your MongoDB Atlas connection string');
-      
-      throw new Error('Critical error: Unable to connect to MongoDB. Cannot start server without database connection for production.');
-    }
-    
-    throw error;
+    process.exit(1);
   }
 };
 
 // Start the server
-startServer().catch(error => {
-  console.error('Fatal error starting server:', error.message);
-  process.exit(1);
-});
+startServer();

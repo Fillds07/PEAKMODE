@@ -6,7 +6,10 @@
   "scripts": {
     "frontend": "cd frontend && npm start",
     "backend": "cd backend && npm run dev",
-    "dev:concurrent": "concurrently \"npm run backend\" \"npm run frontend\"",
+    "start": "concurrently \"npm run backend\" \"npm run frontend\"",
+    "local": "brew services start mongodb/brew/mongodb-community@7.0 && npm run start",
+    "mongo:start": "brew services start mongodb/brew/mongodb-community@7.0",
+    "mongo:stop": "brew services stop mongodb/brew/mongodb-community@7.0",
     "install:all": "npm install && npm run install:backend && npm run install:frontend",
     "install:backend": "cd backend && npm install",
     "install:frontend": "cd frontend && npm install --legacy-peer-deps",
@@ -21,7 +24,9 @@
   "author": "",
   "license": "MIT",
   "devDependencies": {
-    "concurrently": "^8.2.2"
+    "concurrently": "^8.2.2",
+    "typescript": "~5.8.3",
+    "@types/react": "~19.0.10"
   },
   "dependencies": {
     "expo": "^53.0.7"

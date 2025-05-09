@@ -2,78 +2,161 @@ import axios from 'axios';
 import * as SecureStore from 'expo-secure-store';
 import Constants from 'expo-constants';
 import { Platform } from 'react-native';
+import * as Network from 'expo-network';
 
 // Use the same token key as auth.service.js
 const TOKEN_KEY = 'peakmode_auth_token';
 const USER_KEY = 'peakmode_user';
 
-// Local development API URL handling
-const LOCAL_DEV_API_URL = Platform.OS === 'ios' 
-  ? 'http://192.168.1.185:5002/api'  // Use your computer's IP address
-  : 'http://10.0.2.2:5002/api';       // Special Android emulator IP for localhost
+// Determine the API URL dynamically
+const determineApiUrl = async () => {
+  // First priority: explicit API URL from app config
+  if (Constants.expoConfig?.extra?.apiUrl) {
+    return Constants.expoConfig.extra.apiUrl;
+  }
 
-// Production API URL
-const PRODUCTION_API_URL = 'https://peakmode-backend.eba-6pcej9t8.us-east-1.elasticbeanstalk.com/api';
+  // Second priority: Public API host environment variable
+  if (Constants.expoConfig?.extra?.expoPublicApiHost) {
+    return `http://${Constants.expoConfig.extra.expoPublicApiHost}:5002/api`;
+  }
 
-// Get API URL from the app config or use local development by default for now
-const API_URL = Constants.expoConfig?.extra?.apiUrl || LOCAL_DEV_API_URL;
+  // Third priority: For development, try to detect local IP address
+  try {
+    const ip = await Network.getIpAddressAsync();
+    if (ip && ip !== '127.0.0.1' && !ip.startsWith('169.254')) {
+      return `http://${ip}:5002/api`;
+    }
+  } catch (error) {
+    console.log('Could not determine IP address:', error);
+  }
+
+  // Fallback to platform-specific localhost values
+  return Platform.OS === 'ios'
+    ? 'http://localhost:5002/api'  // iOS simulator can use localhost
+    : 'http://10.0.2.2:5002/api';  // Android emulator needs special IP for localhost
+};
+
+// Initialize with a temporary URL, will be updated after we can determine the real one
+let API_URL = 'http://localhost:5002/api';
 
 // For debugging
-console.log('Using API URL:', API_URL);
+console.log('Initial API URL:', API_URL);
 
-// Create axios instance
+// Create axios instance with performance optimizations
 const api = axios.create({
-  baseURL: API_URL,
+  // We'll update the baseURL after initialization
   headers: {
     'Content-Type': 'application/json',
   },
+  // Optimize performance
+  timeout: 5000, // 5 second timeout
 });
+
+// Initialize API URL asynchronously
+(async () => {
+  try {
+    API_URL = await determineApiUrl();
+    api.defaults.baseURL = API_URL;
+    console.log('Updated API URL:', API_URL);
+  } catch (error) {
+    console.error('Error determining API URL:', error);
+  }
+})();
+
+// Request performance optimization 
+let pendingRequests = {};
+
+// Add request caching for GET requests
+const cache = new Map();
+const CACHE_DURATION = 30000; // 30 seconds
 
 // Request interceptor to add auth token
 api.interceptors.request.use(
   async (config) => {
     try {
+      // Ensure baseURL is set correctly (in case it was initialized after some requests)
+      if (!config.baseURL || config.baseURL !== API_URL) {
+        config.baseURL = API_URL;
+      }
+
+      // Add cache-busting for profile endpoint to ensure fresh data
+      if (config.url?.includes('/users/profile') && config.method === 'get') {
+        config.params = { ...config.params, _t: new Date().getTime() };
+      }
+
+      // Add auth token
       const token = await SecureStore.getItemAsync(TOKEN_KEY);
       if (token) {
         config.headers.Authorization = `Bearer ${token}`;
-        console.log('Added token to request:', config.url);
-      } else {
-        console.log('No token available for request:', config.url);
       }
+
+      // Return from cache for GET requests if available and not expired
+      if (config.method === 'get') {
+        const cacheKey = `${config.url}${JSON.stringify(config.params || {})}`;
+        const cachedResponse = cache.get(cacheKey);
+        
+        if (cachedResponse && (Date.now() - cachedResponse.timestamp < CACHE_DURATION)) {
+          // Resolve immediately from cache
+          config.adapter = () => {
+            return Promise.resolve({
+              data: cachedResponse.data,
+              status: 200,
+              statusText: 'OK',
+              headers: cachedResponse.headers,
+              config,
+              request: {}
+            });
+          };
+        }
+      }
+
+      return config;
     } catch (error) {
-      console.error('Error retrieving token:', error);
+      console.error('Error in request interceptor:', error);
+      return config;
     }
-    return config;
   },
-  (error) => {
-    return Promise.reject(error);
-  }
+  (error) => Promise.reject(error)
 );
 
-// Response interceptor to handle common error scenarios
+// Response interceptor for caching and error handling
 api.interceptors.response.use(
-  (response) => response,
+  (response) => {
+    // Cache successful GET responses
+    if (response.config.method === 'get' && response.status === 200) {
+      const cacheKey = `${response.config.url}${JSON.stringify(response.config.params || {})}`;
+      cache.set(cacheKey, {
+        data: response.data,
+        headers: response.headers,
+        timestamp: Date.now()
+      });
+    }
+    return response;
+  },
   async (error) => {
     const { response, config } = error;
     
     // Handle token expiration (401 errors) - except during login attempts
     if (response && response.status === 401 && !config.url.includes('/auth/login')) {
-      console.log('401 Unauthorized response received, clearing tokens');
       await SecureStore.deleteItemAsync(TOKEN_KEY);
       await SecureStore.deleteItemAsync(USER_KEY);
-      // You may want to redirect to login screen here
+      clearCache();
     }
     
     return Promise.reject(error);
   }
 );
+
+// Clear the cache
+const clearCache = () => {
+  cache.clear();
+};
 
 // Special error class for authentication errors that shouldn't trigger global error reporting
 class AuthenticationError extends Error {
   constructor(message) {
     super(message);
     this.name = 'AuthenticationError';
-    // This special flag helps identify this as a "handled" error that shouldn't be shown in global reporting
     this.isHandled = true;
   }
 }
@@ -86,69 +169,59 @@ export const authService = {
     return response.data;
   },
 
-  // Login user
+  // Login user - optimized for speed
   login: async (credentials) => {
     try {
+      // Clear cache on login
+      clearCache();
+      
       const response = await api.post('/auth/login', credentials);
       const { token, data } = response.data;
       
-      // Store the token securely
-      if (token) {
-        await SecureStore.setItemAsync(TOKEN_KEY, token);
-        
-        // Also store user data
-        if (data && data.user) {
-          await SecureStore.setItemAsync(USER_KEY, JSON.stringify(data.user));
-        }
+      // Store token and user data in parallel
+      if (token && data?.user) {
+        await Promise.all([
+          SecureStore.setItemAsync(TOKEN_KEY, token),
+          SecureStore.setItemAsync(USER_KEY, JSON.stringify(data.user))
+        ]);
       }
       
       return data.user;
     } catch (error) {
-      // Only log unexpected errors, not authentication errors
-      if (!error.response || error.response.status !== 401) {
-        console.error('Error in login:', error);
-      }
-      
       // Handle specific error cases with user-friendly messages
       if (error.response) {
-        // The request was made and the server responded with an error status
         const status = error.response.status;
         const errorData = error.response.data;
         
-        // Authentication error (wrong credentials)
         if (status === 401) {
           throw new AuthenticationError('Incorrect username or password');
-        } 
-        // Bad request (missing fields)
-        else if (status === 400) {
+        } else if (status === 400) {
           throw new AuthenticationError(errorData?.message || 'Please enter valid credentials');
-        }
-        // Server error
-        else if (status >= 500) {
+        } else if (status >= 500) {
           throw new Error('Server error. Please try again later');
-        }
-        // Any other error
-        else {
+        } else {
           throw new Error(errorData?.message || 'Login failed');
         }
-      } 
-      // Network error or server not responding
-      else if (error.request) {
+      } else if (error.request) {
         throw new Error('Cannot connect to server. Please check your network connection');
-      } 
-      // Other errors
-      else {
+      } else {
         throw error;
       }
     }
   },
 
-  // Logout user
+  // Logout user - optimized for speed
   logout: async () => {
     try {
-      console.log('Logging out user, removing tokens');
-      await SecureStore.deleteItemAsync(TOKEN_KEY);
-      await SecureStore.deleteItemAsync(USER_KEY);
+      // Clear cache on logout
+      clearCache();
+      
+      // Remove tokens in parallel
+      await Promise.all([
+        SecureStore.deleteItemAsync(TOKEN_KEY),
+        SecureStore.deleteItemAsync(USER_KEY)
+      ]);
+      
       return true;
     } catch (error) {
       console.error('Error during logout:', error);
@@ -158,24 +231,16 @@ export const authService = {
 
   // Request password reset
   forgotPassword: async (payload) => {
-    // payload can contain either email or username
     try {
       const response = await api.post('/auth/forgotPassword', payload);
       return response.data;
     } catch (error) {
-      console.error('Error in forgotPassword:', error);
-      
-      // Rethrow with enhanced error details
       if (error.response) {
-        // The request was made and the server responded with a status code
-        // that falls out of the range of 2xx
         const errorMessage = error.response.data?.message || 'Failed to request password reset';
         throw new Error(errorMessage);
       } else if (error.request) {
-        // The request was made but no response was received
         throw new Error('No response received from server. Please check your network connection.');
       } else {
-        // Something happened in setting up the request that triggered an Error
         throw error;
       }
     }
@@ -184,9 +249,6 @@ export const authService = {
   // Reset password with token
   resetPassword: async (token, password) => {
     try {
-      console.log('API: Attempting to reset password with token:', token);
-      
-      // Make sure token is clean
       const cleanToken = token.trim();
       
       const response = await api.patch('/auth/resetPassword', { 
@@ -194,24 +256,15 @@ export const authService = {
         password 
       });
       
-      console.log('Password reset success');
       return response.data;
     } catch (error) {
-      console.error('Error in resetPassword:', error);
-      
-      // Enhance error handling with more specific messages
       if (error.response) {
-        // Server responded with error status
         const status = error.response.status;
         const errorData = error.response.data;
-        
-        console.log('Reset password error status:', status);
-        console.log('Reset password error data:', errorData);
         
         if (status === 400) {
           // Token validation issues (expired, invalid)
           const message = errorData?.message || 'Token validation failed';
-          console.log('Token validation failed with message:', message);
           error.tokenExpired = message.includes('expired') || message.includes('invalid');
           throw error;
         } else if (status === 401) {
@@ -219,14 +272,11 @@ export const authService = {
         } else if (status >= 500) {
           throw new Error('Server error. Please try again later.');
         } else {
-          // For any other error status
           throw new Error(errorData?.message || 'Password reset failed');
         }
       } else if (error.request) {
-        // The request was made but no response was received
         throw new Error('No response received from server. Please check your network connection.');
       } else {
-        // Something happened in setting up the request
         throw error;
       }
     }
@@ -241,21 +291,52 @@ export const authService = {
 
 // User profile services
 export const userService = {
-  // Get current user profile
+  // Get current user profile - optimized with caching and fallback
   getProfile: async () => {
     try {
       const response = await api.get('/users/profile');
+      
+      // Store fresh user data in secure storage as backup
+      if (response?.data?.data?.user) {
+        await SecureStore.setItemAsync(USER_KEY, JSON.stringify(response.data.data.user));
+      }
+      
       return response.data;
     } catch (error) {
       console.error('Error fetching profile:', error);
+      
+      // Try to get cached user data if API fails
+      try {
+        const userJson = await SecureStore.getItemAsync(USER_KEY);
+        if (userJson) {
+          const userData = JSON.parse(userJson);
+          return { 
+            status: 'success', 
+            data: { user: userData },
+            cached: true 
+          };
+        }
+      } catch (storageError) {
+        console.error('Error fetching user from storage:', storageError);
+      }
+      
       throw error;
     }
   },
 
-  // Update user profile
+  // Update user profile - optimized to update local cache
   updateProfile: async (profileData) => {
     try {
       const response = await api.patch('/users/profile', profileData);
+      
+      // Update local cache
+      if (response?.data?.data?.user) {
+        await SecureStore.setItemAsync(USER_KEY, JSON.stringify(response.data.data.user));
+      }
+      
+      // Clear API cache to ensure fresh data
+      clearCache();
+      
       return response.data;
     } catch (error) {
       console.error('Error updating profile:', error);
@@ -274,37 +355,19 @@ export const userService = {
     }
   },
 
-  // Delete user account
+  // Delete user account - optimized
   deleteAccount: async () => {
     try {
-      console.log('Attempting to delete user account');
-      const token = await SecureStore.getItemAsync(TOKEN_KEY);
+      const response = await api.delete('/users/profile');
       
-      if (!token) {
-        throw new Error('Authentication token not found');
-      }
+      // Clear all local data
+      clearCache();
+      await Promise.all([
+        SecureStore.deleteItemAsync(TOKEN_KEY),
+        SecureStore.deleteItemAsync(USER_KEY)
+      ]);
       
-      // Make a direct fetch call with the token to ensure it's included
-      const response = await fetch(`${API_URL}/users/profile`, {
-        method: 'DELETE',
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${token}`
-        }
-      });
-      
-      if (!response.ok) {
-        const errorData = await response.json();
-        throw new Error(errorData.message || `Failed to delete account: ${response.status}`);
-      }
-      
-      const data = await response.json();
-      
-      // Clear tokens after successful deletion
-      await SecureStore.deleteItemAsync(TOKEN_KEY);
-      await SecureStore.deleteItemAsync(USER_KEY);
-      
-      return data;
+      return response.data;
     } catch (error) {
       console.error('Error deleting account:', error);
       throw error;

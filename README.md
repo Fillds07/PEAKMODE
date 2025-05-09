@@ -27,6 +27,24 @@ npm run dev
 
 This will start the backend server on port 5000 and launch the Expo development server for the frontend.
 
+## For Testers & Graders
+
+### One-Command Setup for Testing
+
+To run the complete app stack (MongoDB, backend, and frontend) with a single command:
+
+```bash
+./start-all.sh
+```
+
+This will:
+1. Start MongoDB database
+2. Launch the backend server
+3. Start the frontend with tunnel mode enabled
+4. Show a QR code that can be scanned from any device on any network
+
+Simply scan the QR code with the Expo Go app (iOS/Android) to start testing.
+
 ## Development Setup
 
 ### Frontend (Expo App)

@@ -73,7 +73,7 @@ export default function Profile() {
   const onRefresh = useCallback(async () => {
     setRefreshing(true);
     try {
-      await fetchUserProfile();
+      await fetchUserProfile(true); // force refresh
       showRefreshNotification('Profile refreshed successfully');
     } catch (error) {
       showRefreshNotification('Failed to refresh profile');
@@ -82,79 +82,90 @@ export default function Profile() {
     }
   }, []);
 
+  // Immediately load profile data from SecureStore first, then refresh with API
   useEffect(() => {
-    // Check if user is authenticated
-    checkAuth();
-    // Get user profile once on initial load
-    fetchUserProfile();
-    
-    // Remove the interval-based refresh
-    
-  }, []);
-
-  const checkAuth = async () => {
-    const isAuthenticated = await authService.isAuthenticated();
-    if (!isAuthenticated) {
-      router.replace('/');
-    }
-  };
-
-  // Synchronize user data in memory and storage
-  const syncUserData = async (userData) => {
-    if (!userData) return false;
-    
-    try {
-      setUserData(userData);
-      await SecureStore.setItemAsync('peakmode_user', JSON.stringify(userData));
-      return true;
-    } catch (error) {
-      console.error('Error syncing user data:', error);
-      return false;
-    }
-  };
-
-  const fetchUserProfile = async () => {
-    try {
-      setLoading(true);
-      // Try to get profile from API
-      const response = await userService.getProfile();
-      if (response?.data?.user) {
-        const userData = response.data.user;
-        await syncUserData(userData);
-        
-        // Also set the edit form values
-        setEditName(userData.name || '');
-        setEditEmail(userData.email || '');
-        setEditUsername(userData.username || '');
-        setEditPhone(userData.phone || '');
-        
-        setError('');
-      } else {
-        throw new Error('Invalid user data received from API');
-      }
-    } catch (error) {
-      console.error('Error fetching profile:', error);
-      
-      // If API call fails, try to get user data from SecureStore
+    async function loadInitialData() {
       try {
+        // First try to load from SecureStore for instant display
         const userJson = await SecureStore.getItemAsync('peakmode_user');
         if (userJson) {
           const userData = JSON.parse(userJson);
           setUserData(userData);
           
-          // Also set the edit form values
+          // Populate edit fields
           setEditName(userData.name || '');
           setEditEmail(userData.email || '');
           setEditUsername(userData.username || '');
           setEditPhone(userData.phone || '');
           
-          setError('Using cached profile data. Pull down to refresh.');
-        } else {
-          setError('Could not fetch profile data. Please login again.');
+          // Now we can show something while we fetch the latest data
+          setLoading(false);
         }
-      } catch (storageError) {
-        console.error('Error fetching user from storage:', storageError);
-        setError('Could not fetch profile data. Please login again.');
+      } catch (e) {
+        console.error('Error loading cached user data:', e);
+      }
+      
+      // Check authentication status
+      const isAuthenticated = await authService.isAuthenticated();
+      if (!isAuthenticated) {
+        router.replace('/');
+        return;
+      }
+      
+      // Fetch fresh data from API
+      fetchUserProfile();
+    }
+    
+    loadInitialData();
+  }, []);
+
+  // Fetch user profile with better error handling and caching
+  const fetchUserProfile = async (forceRefresh = false) => {
+    // If we already have data and this isn't a forced refresh, just return
+    if (userData && !forceRefresh) {
+      setLoading(false);
+      return;
+    }
+    
+    if (!userData) {
+      setLoading(true);
+    }
+    
+    try {
+      const response = await userService.getProfile();
+      
+      if (response?.data?.user) {
+        const userData = response.data.user;
+        
+        // Update state with fresh data
+        setUserData(userData);
+        
+        // Update edit form values
+        setEditName(userData.name || '');
+        setEditEmail(userData.email || '');
+        setEditUsername(userData.username || '');
+        setEditPhone(userData.phone || '');
+        
+        // Clear error state since we have data
+        setError('');
+      } else if (response?.cached) {
+        // We're using cached data, show a subtle indicator
+        setError('Using offline data. Pull down to refresh.');
+      }
+    } catch (error) {
+      console.error('Error fetching profile:', error);
+      
+      // Handle token expiration error
+      if (error.response?.status === 401) {
+        router.replace('/');
+        return;
+      }
+      
+      // Only display error if we couldn't get data from cache either
+      if (!userData) {
+        setError('Could not fetch profile data. Please try again.');
+      } else {
+        setError('Could not update profile. Using cached data.');
       }
     } finally {
       setLoading(false);
@@ -162,11 +173,6 @@ export default function Profile() {
   };
 
   const handleOpenEditProfile = () => {
-    // Set the form values from user data
-    setEditName(userData?.name || '');
-    setEditEmail(userData?.email || '');
-    setEditUsername(userData?.username || '');
-    setEditPhone(userData?.phone || '');
     setEditError('');
     setEditProfileVisible(true);
   };
@@ -195,90 +201,102 @@ export default function Profile() {
   // Helper for validating phone
   const isValidPhone = (phone) => {
     if (!phone) return true; // Phone is optional
-    
-    // Basic validation - can be enhanced
     return phone.length >= 10;
   };
 
-  // Helper function to format date
+  // Format date in a user-friendly way
   const formatDate = (dateString) => {
     if (!dateString) return 'N/A';
-    try {
-      const date = new Date(dateString);
-      return date.toLocaleDateString(undefined, {
-        year: 'numeric',
-        month: 'long',
-        day: 'numeric'
-      });
-    } catch (error) {
-      console.error('Date formatting error:', error);
-      return 'Invalid date';
-    }
+    
+    const options = { 
+      year: 'numeric', 
+      month: 'short', 
+      day: 'numeric',
+      hour: '2-digit',
+      minute: '2-digit'
+    };
+    
+    return new Date(dateString).toLocaleDateString(undefined, options);
   };
 
-  // Enhanced validation for the update profile function
+  // Optimized save profile function
   const handleSaveProfile = async () => {
-    // Clear previous errors
+    setEditLoading(true);
     setEditError('');
     
-    // Validate fields
-    if (editEmail && !isValidEmail(editEmail)) {
-      setEditError('Please enter a valid email address');
-      return;
-    }
-    
-    if (editPhone && !isValidPhone(editPhone)) {
-      setEditError('Please enter a valid phone number');
-      return;
-    }
-    
     try {
-      setEditLoading(true);
-      
-      // Only include fields that have values and have changed
-      const profileData = {};
-      
-      if (editName !== userData?.name) profileData.name = editName;
-      if (editEmail !== userData?.email) profileData.email = editEmail;
-      if (editUsername !== userData?.username) profileData.username = editUsername;
-      if (editPhone !== userData?.phone) profileData.phone = editPhone || undefined;
-      
-      // Only make API call if there are changes
-      if (Object.keys(profileData).length === 0) {
-        setEditProfileVisible(false);
-        Alert.alert('Info', 'No changes were made to your profile.');
+      // Validate form
+      if (!editName.trim()) {
+        setEditError('Name cannot be empty');
+        setEditLoading(false);
         return;
       }
       
-      // Call API to update profile
-      const result = await userService.updateProfile(profileData);
+      if (!isValidEmail(editEmail)) {
+        setEditError('Invalid email format');
+        setEditLoading(false);
+        return;
+      }
       
-      // Update local user data using sync utility
-      await syncUserData(result.data.user);
+      if (!isValidPhone(editPhone)) {
+        setEditError('Invalid phone number format');
+        setEditLoading(false);
+        return;
+      }
       
-      // Close modal and show success
-      setEditProfileVisible(false);
+      // Prepare update data
+      const updateData = {
+        name: editName.trim(),
+        email: editEmail.trim(),
+        phone: editPhone.trim()
+      };
       
-      // Show which fields were updated
-      const updatedFields = Object.keys(profileData).map(key => 
-        key.charAt(0).toUpperCase() + key.slice(1)
-      ).join(', ');
+      // Only submit data that has changed
+      const changedData = Object.keys(updateData).reduce((acc, key) => {
+        if (updateData[key] !== userData[key]) {
+          acc[key] = updateData[key];
+        }
+        return acc;
+      }, {});
       
-      Alert.alert(
-        'Success', 
-        `Profile updated successfully.\nUpdated fields: ${updatedFields}`
-      );
+      // Only make API call if something changed
+      if (Object.keys(changedData).length === 0) {
+        setEditProfileVisible(false);
+        setEditLoading(false);
+        return;
+      }
       
-      // Refresh user profile after update
-      await fetchUserProfile();
+      const response = await userService.updateProfile(changedData);
+      
+      if (response?.data?.user) {
+        // Update local state with fresh data
+        setUserData(response.data.user);
+        handleCloseEditProfile();
+        
+        // Show success message
+        if (Platform.OS === 'android') {
+          ToastAndroid.show('Profile updated successfully', ToastAndroid.SHORT);
+        } else {
+          Alert.alert('Success', 'Profile updated successfully');
+        }
+      } else {
+        throw new Error('Invalid response from server');
+      }
     } catch (error) {
       console.error('Error updating profile:', error);
-      setEditError(error.message || 'Failed to update profile. Please try again.');
+      
+      // Extract error message
+      const errorMessage = error.response?.data?.message || 
+                           error.message || 
+                           'Failed to update profile';
+      
+      setEditError(errorMessage);
     } finally {
       setEditLoading(false);
     }
   };
 
+  // Password change modal handling
   const handleOpenChangePassword = () => {
     setCurrentPassword('');
     setNewPassword('');
@@ -291,746 +309,737 @@ export default function Profile() {
     setChangePasswordVisible(false);
   };
 
+  // Validate password strength
   const validatePassword = (password) => {
-    const minLength = 8;
-    const maxLength = 20;
-    const hasUppercase = /[A-Z]/.test(password);
-    const hasLowercase = /[a-z]/.test(password);
-    const hasNumber = /[0-9]/.test(password);
-    const hasSpecialChar = /[!@#$%^&*()_+\-=\[\]{};':"\\|,.<>\/?]+/.test(password);
-    
-    const isValid = 
-      password.length >= minLength &&
-      password.length <= maxLength &&
-      hasUppercase &&
-      hasLowercase &&
-      hasNumber &&
-      hasSpecialChar;
-      
-    if (!isValid) {
-      let errorMsg = 'Password must:';
-      if (password.length < minLength) errorMsg += ' be at least 8 characters long,';
-      if (password.length > maxLength) errorMsg += ' be at most 20 characters long,';
-      if (!hasUppercase) errorMsg += ' include uppercase letters,';
-      if (!hasLowercase) errorMsg += ' include lowercase letters,';
-      if (!hasNumber) errorMsg += ' include numbers,';
-      if (!hasSpecialChar) errorMsg += ' include special characters,';
-      
-      // Replace the last comma with a period
-      errorMsg = errorMsg.replace(/,$/, '.');
-      return { isValid, errorMsg };
+    if (password.length < 8) {
+      return 'Password must be at least 8 characters long';
     }
     
-    return { isValid, errorMsg: '' };
+    // Check for at least one number
+    if (!/\d/.test(password)) {
+      return 'Password must contain at least one number';
+    }
+    
+    // Check for at least one uppercase letter
+    if (!/[A-Z]/.test(password)) {
+      return 'Password must contain at least one uppercase letter';
+    }
+    
+    // Check for at least one lowercase letter
+    if (!/[a-z]/.test(password)) {
+      return 'Password must contain at least one lowercase letter';
+    }
+    
+    // Check for at least one special character
+    if (!/[^A-Za-z0-9]/.test(password)) {
+      return 'Password must contain at least one special character';
+    }
+    
+    return ''; // Empty string means valid
   };
 
+  // Handle password change
   const handleSavePassword = async () => {
-    // Validate form
-    if (!currentPassword || !newPassword || !confirmPassword) {
-      setPasswordError('All fields are required');
-      return;
-    }
-    
-    // Check if new passwords match
-    if (newPassword !== confirmPassword) {
-      setPasswordError('New passwords do not match');
-      return;
-    }
-    
-    // Validate new password strength
-    const validation = validatePassword(newPassword);
-    if (!validation.isValid) {
-      setPasswordError(validation.errorMsg);
-      return;
-    }
+    setPasswordLoading(true);
+    setPasswordError('');
     
     try {
-      setPasswordLoading(true);
-      setPasswordError('');
+      // Validate current password
+      if (!currentPassword) {
+        setPasswordError('Current password is required');
+        setPasswordLoading(false);
+        return;
+      }
+      
+      // Validate new password
+      const passwordValidationError = validatePassword(newPassword);
+      if (passwordValidationError) {
+        setPasswordError(passwordValidationError);
+        setPasswordLoading(false);
+        return;
+      }
+      
+      // Check if passwords match
+      if (newPassword !== confirmPassword) {
+        setPasswordError('New password and confirmation do not match');
+        setPasswordLoading(false);
+        return;
+      }
       
       // Call API to change password
-      await userService.changePassword({
+      const response = await userService.changePassword({
         currentPassword,
         newPassword
       });
       
-      // Close modal and show success
-      setChangePasswordVisible(false);
-      Alert.alert('Success', 'Password changed successfully');
+      handleCloseChangePassword();
       
-      // Refresh user profile after password change
-      await fetchUserProfile();
+      // Show success message
+      if (Platform.OS === 'android') {
+        ToastAndroid.show('Password changed successfully', ToastAndroid.SHORT);
+      } else {
+        Alert.alert('Success', 'Password changed successfully');
+      }
     } catch (error) {
       console.error('Error changing password:', error);
-      setPasswordError(error.message || 'Failed to change password. Please try again.');
+      
+      // Extract error message
+      const errorMessage = error.response?.data?.message || 
+                           error.message || 
+                           'Failed to change password';
+      
+      setPasswordError(errorMessage);
     } finally {
       setPasswordLoading(false);
     }
   };
 
+  // Optimized logout function
   const handleLogout = async () => {
     try {
       Alert.alert(
         'Logout',
         'Are you sure you want to logout?',
         [
-          { text: 'Cancel', style: 'cancel' },
-          { 
-            text: 'Logout', 
+          {
+            text: 'Cancel',
+            style: 'cancel'
+          },
+          {
+            text: 'Logout',
             style: 'destructive',
             onPress: async () => {
+              // Set loading to prevent multiple taps
               setLoading(true);
+              
               await authService.logout();
               router.replace('/');
-            } 
-          },
+            }
+          }
         ]
       );
     } catch (error) {
-      console.error('Logout error:', error);
-      Alert.alert('Error', 'Failed to logout. Please try again.');
+      console.error('Error logging out:', error);
+      setLoading(false);
+      
+      Alert.alert('Error', 'An error occurred while logging out');
     }
   };
 
+  // Handle account deletion
   const handleDeleteAccount = async () => {
-    try {
-      Alert.alert(
-        'Delete Account',
-        'Are you sure you want to delete your account? This action cannot be undone.',
-        [
-          { text: 'Cancel', style: 'cancel' },
-          { 
-            text: 'Delete Account', 
-            style: 'destructive',
-            onPress: async () => {
-              try {
-                setLoading(true);
-                await userService.deleteAccount();
-                Alert.alert(
-                  'Account Deleted',
-                  'Your account has been successfully deleted.',
-                  [
-                    { 
-                      text: 'OK',
-                      onPress: () => router.replace('/')
-                    }
-                  ]
-                );
-              } catch (error) {
-                console.error('Delete account error:', error);
-                setLoading(false);
-                Alert.alert(
-                  'Error',
-                  error.message || 'Failed to delete account. Please try again.'
-                );
-              }
-            } 
-          },
-        ]
-      );
-    } catch (error) {
-      console.error('Delete account error:', error);
-      Alert.alert('Error', 'Failed to process your request. Please try again.');
-    }
+    Alert.alert(
+      'Delete Account',
+      'Are you sure you want to delete your account? This action cannot be undone.',
+      [
+        {
+          text: 'Cancel',
+          style: 'cancel'
+        },
+        {
+          text: 'Delete',
+          style: 'destructive',
+          onPress: async () => {
+            try {
+              setLoading(true);
+              
+              await userService.deleteAccount();
+              
+              // Navigate to login
+              router.replace('/');
+            } catch (error) {
+              console.error('Error deleting account:', error);
+              setLoading(false);
+              
+              Alert.alert(
+                'Error',
+                'Failed to delete account. Please try again.'
+              );
+            }
+          }
+        }
+      ]
+    );
   };
 
-  if (loading) {
-    return (
-      <SafeAreaView style={styles.safeAreaContainer}>
-        <View style={styles.loadingContainer}>
-          <ActivityIndicator size="large" color={COLORS.primary} />
-          <Text style={styles.loadingText}>Loading profile...</Text>
-        </View>
-      </SafeAreaView>
-    );
-  }
-
-  // Get initial for avatar
+  // Get the first initial of user's name for avatar
   const getInitial = () => {
     if (!userData || !userData.name) return '?';
     return userData.name.charAt(0).toUpperCase();
   };
 
+  // Main render function
   return (
-    <SafeAreaView style={styles.safeAreaContainer}>
+    <SafeAreaView style={styles.safeArea}>
       <ScrollView 
         style={styles.container}
-        contentContainerStyle={styles.contentContainer}
         refreshControl={
           <RefreshControl
             refreshing={refreshing}
             onRefresh={onRefresh}
-            colors={[COLORS.primary]} // Android
-            tintColor={COLORS.primary} // iOS
+            colors={[COLORS.primary]}
+            tintColor={COLORS.primary}
           />
         }
       >
-        <View style={styles.profileCard}>
-          <View style={styles.header}>
-            <View style={styles.avatarContainer}>
-              <View style={styles.avatar}>
+        {loading && !userData ? (
+          <View style={styles.loadingContainer}>
+            <ActivityIndicator size="large" color={COLORS.primary} />
+            <Text style={styles.loadingText}>Loading profile...</Text>
+          </View>
+        ) : error && !userData ? (
+          <View style={styles.errorContainer}>
+            <Ionicons name="alert-circle-outline" size={60} color={COLORS.error} />
+            <Text style={styles.errorText}>{error}</Text>
+            <TouchableOpacity 
+              style={styles.retryButton}
+              onPress={() => fetchUserProfile(true)}
+            >
+              <Text style={styles.retryButtonText}>Retry</Text>
+            </TouchableOpacity>
+          </View>
+        ) : (
+          <>
+            {/* Header with user avatar */}
+            <View style={styles.header}>
+              <View style={styles.avatarContainer}>
                 <Text style={styles.avatarText}>{getInitial()}</Text>
               </View>
-            </View>
-            
-            <Text style={styles.userName}>{userData?.name || 'User'}</Text>
-            <Text style={styles.userHandle}>@{userData?.username || 'username'}</Text>
-          </View>
-
-          <View style={styles.infoSection}>
-            <Text style={styles.sectionTitle}>Account Information</Text>
-            
-            <View style={styles.infoItem}>
-              <Ionicons name="mail-outline" size={22} color={COLORS.primary} style={styles.infoIcon} />
-              <View style={styles.infoContent}>
-                <Text style={styles.infoLabel}>Email</Text>
-                <Text style={styles.infoValue}>{userData?.email || 'No email provided'}</Text>
+              <View style={styles.headerTextContainer}>
+                <Text style={styles.userName}>{userData?.name || 'User'}</Text>
+                <Text style={styles.userInfo}>@{userData?.username || 'username'}</Text>
+                {error ? (
+                  <Text style={styles.cacheNotice}>{error}</Text>
+                ) : null}
               </View>
             </View>
             
-            <View style={styles.infoItem}>
-              <Ionicons name="call-outline" size={22} color={COLORS.primary} style={styles.infoIcon} />
-              <View style={styles.infoContent}>
-                <Text style={styles.infoLabel}>Phone</Text>
-                <Text style={styles.infoValue}>
-                  {userData?.phone ? formatPhoneForDisplay(userData.phone) : 'No phone provided'}
-                </Text>
-              </View>
-            </View>
-            
-            <View style={styles.infoItem}>
-              <Ionicons name="calendar-outline" size={22} color={COLORS.primary} style={styles.infoIcon} />
-              <View style={styles.infoContent}>
-                <Text style={styles.infoLabel}>Joined</Text>
-                <Text style={styles.infoValue}>{formatDate(userData?.createdAt)}</Text>
-              </View>
-            </View>
-          </View>
-          
-          <View style={styles.actionsSection}>
-            <TouchableOpacity 
-              style={styles.actionButton}
-              onPress={handleOpenEditProfile}
-            >
-              <Ionicons name="person-circle-outline" size={22} color={COLORS.primary} />
-              <Text style={styles.actionText}>Edit Profile</Text>
-              <Ionicons name="chevron-forward" size={20} color={COLORS.primary} />
-            </TouchableOpacity>
-
-            <TouchableOpacity 
-              style={styles.actionButton}
-              onPress={handleOpenChangePassword}
-            >
-              <Ionicons name="key-outline" size={22} color={COLORS.primary} />
-              <Text style={styles.actionText}>Change Password</Text>
-              <Ionicons name="chevron-forward" size={20} color={COLORS.primary} />
-            </TouchableOpacity>
-            
-            <TouchableOpacity 
-              style={styles.actionButton}
-              onPress={handleLogout}
-            >
-              <Ionicons name="log-out-outline" size={22} color={COLORS.primary} />
-              <Text style={styles.actionText}>Log Out</Text>
-              <Ionicons name="chevron-forward" size={20} color={COLORS.primary} />
-            </TouchableOpacity>
-            
-            <TouchableOpacity 
-              style={[styles.actionButton, styles.dangerButton]}
-              onPress={handleDeleteAccount}
-            >
-              <Ionicons name="trash-outline" size={22} color={COLORS.error} />
-              <Text style={styles.dangerText}>Delete Account</Text>
-              <Ionicons name="chevron-forward" size={20} color={COLORS.error} />
-            </TouchableOpacity>
-          </View>
-        </View>
-
-        {/* Edit Profile Modal */}
-        <Modal
-          visible={editProfileVisible}
-          animationType="slide"
-          transparent={true}
-          onRequestClose={handleCloseEditProfile}
-        >
-          <KeyboardAvoidingView
-            behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
-            style={styles.modalContainer}
-          >
-            <View style={styles.modalContent}>
-              <View style={styles.modalHeader}>
-                <Text style={styles.modalTitle}>Edit Profile</Text>
-                <TouchableOpacity onPress={handleCloseEditProfile}>
-                  <Ionicons name="close" size={24} color={COLORS.text} />
-                </TouchableOpacity>
+            {/* Profile details */}
+            <View style={styles.card}>
+              <Text style={styles.sectionTitle}>Account Details</Text>
+              
+              <View style={styles.profileItem}>
+                <Ionicons name="mail-outline" size={20} color={COLORS.primary} />
+                <Text style={styles.profileLabel}>Email:</Text>
+                <Text style={styles.profileValue}>{userData?.email || 'Not set'}</Text>
               </View>
               
-              <ScrollView style={styles.modalForm}>
-                <Text style={styles.modalDescription}>
-                  Update your profile information. Only modified fields will be updated.
+              <View style={styles.profileItem}>
+                <Ionicons name="call-outline" size={20} color={COLORS.primary} />
+                <Text style={styles.profileLabel}>Phone:</Text>
+                <Text style={styles.profileValue}>
+                  {userData?.phone ? formatPhoneForDisplay(userData.phone) : 'Not set'}
                 </Text>
-                
-                <View style={styles.formGroup}>
-                  <Text style={styles.label}>Full Name <Text style={styles.requiredStar}>*</Text></Text>
-                  <TextInput
-                    style={styles.input}
-                    value={editName}
-                    onChangeText={setEditName}
-                    placeholder="Enter your full name"
-                    placeholderTextColor={COLORS.textSecondary}
-                  />
-                </View>
-                
-                <View style={styles.formGroup}>
-                  <Text style={styles.label}>Email <Text style={styles.requiredStar}>*</Text></Text>
-                  <TextInput
-                    style={styles.input}
-                    value={editEmail}
-                    onChangeText={setEditEmail}
-                    placeholder="Enter your email"
-                    keyboardType="email-address"
-                    autoCapitalize="none"
-                    placeholderTextColor={COLORS.textSecondary}
-                  />
-                </View>
-                
-                <View style={styles.formGroup}>
-                  <Text style={styles.label}>Username <Text style={styles.requiredStar}>*</Text></Text>
-                  <TextInput
-                    style={styles.input}
-                    value={editUsername}
-                    onChangeText={setEditUsername}
-                    placeholder="Enter your username"
-                    autoCapitalize="none"
-                    placeholderTextColor={COLORS.textSecondary}
-                  />
-                </View>
-                
-                <View style={styles.formGroup}>
-                  <Text style={styles.label}>Phone (Optional)</Text>
-                  <TextInput
-                    style={styles.input}
-                    value={editPhone}
-                    onChangeText={setEditPhone}
-                    placeholder="Enter your phone number"
-                    keyboardType="phone-pad"
-                    placeholderTextColor={COLORS.textSecondary}
-                  />
-                </View>
-                
-                {editError ? (
-                  <View style={styles.errorContainer}>
-                    <Text style={styles.errorText}>{editError}</Text>
-                  </View>
-                ) : null}
-                
-                <View style={styles.formActions}>
-                  <TouchableOpacity 
-                    style={[styles.button, styles.cancelButton]}
-                    onPress={handleCloseEditProfile}
-                  >
-                    <Text style={styles.cancelButtonText}>Cancel</Text>
-                  </TouchableOpacity>
-                  
-                  <TouchableOpacity 
-                    style={[styles.button, styles.saveButton]}
-                    onPress={handleSaveProfile}
-                    disabled={editLoading}
-                  >
-                    {editLoading ? (
-                      <ActivityIndicator color="#FFFFFF" size="small" />
-                    ) : (
-                      <Text style={styles.saveButtonText}>Save Changes</Text>
-                    )}
-                  </TouchableOpacity>
-                </View>
-              </ScrollView>
-            </View>
-          </KeyboardAvoidingView>
-        </Modal>
-
-        {/* Change Password Modal */}
-        <Modal
-          visible={changePasswordVisible}
-          animationType="slide"
-          transparent={true}
-          onRequestClose={handleCloseChangePassword}
-        >
-          <KeyboardAvoidingView
-            behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
-            style={styles.modalContainer}
-          >
-            <View style={styles.modalContent}>
-              <View style={styles.modalHeader}>
-                <Text style={styles.modalTitle}>Change Password</Text>
-                <TouchableOpacity onPress={handleCloseChangePassword}>
-                  <Ionicons name="close" size={24} color={COLORS.text} />
-                </TouchableOpacity>
               </View>
               
-              <ScrollView style={styles.modalForm}>
-                <Text style={styles.modalDescription}>
-                  Update your password. Make sure to use a strong password that you don't use elsewhere.
+              <View style={styles.profileItem}>
+                <Ionicons name="person-outline" size={20} color={COLORS.primary} />
+                <Text style={styles.profileLabel}>Role:</Text>
+                <Text style={styles.profileValue}>
+                  {userData?.role ? userData.role.charAt(0).toUpperCase() + userData.role.slice(1) : 'User'}
                 </Text>
-                
-                <View style={styles.formGroup}>
-                  <Text style={styles.label}>Current Password</Text>
-                  <View style={styles.passwordContainer}>
-                    <TextInput
-                      style={[styles.input, styles.passwordInput]}
-                      value={currentPassword}
-                      onChangeText={setCurrentPassword}
-                      placeholder="Enter your current password"
-                      secureTextEntry={!showCurrentPassword}
-                      placeholderTextColor={COLORS.textSecondary}
-                    />
-                    <TouchableOpacity 
-                      style={styles.passwordToggle}
-                      onPress={() => setShowCurrentPassword(!showCurrentPassword)}
-                    >
-                      <Ionicons 
-                        name={showCurrentPassword ? 'eye-off' : 'eye'} 
-                        size={24} 
-                        color={COLORS.textSecondary} 
-                      />
-                    </TouchableOpacity>
-                  </View>
-                </View>
-                
-                <View style={styles.formGroup}>
-                  <Text style={styles.label}>New Password</Text>
-                  <View style={styles.passwordContainer}>
-                    <TextInput
-                      style={[styles.input, styles.passwordInput]}
-                      value={newPassword}
-                      onChangeText={setNewPassword}
-                      placeholder="Enter new password"
-                      secureTextEntry={!showNewPassword}
-                      placeholderTextColor={COLORS.textSecondary}
-                    />
-                    <TouchableOpacity 
-                      style={styles.passwordToggle}
-                      onPress={() => setShowNewPassword(!showNewPassword)}
-                    >
-                      <Ionicons 
-                        name={showNewPassword ? 'eye-off' : 'eye'} 
-                        size={24} 
-                        color={COLORS.textSecondary} 
-                      />
-                    </TouchableOpacity>
-                  </View>
-                  <Text style={styles.passwordHint}>
-                    Password must be 8-20 characters and include uppercase, lowercase, number, and special character.
-                  </Text>
-                </View>
-                
-                <View style={styles.formGroup}>
-                  <Text style={styles.label}>Confirm New Password</Text>
-                  <View style={styles.passwordContainer}>
-                    <TextInput
-                      style={[styles.input, styles.passwordInput]}
-                      value={confirmPassword}
-                      onChangeText={setConfirmPassword}
-                      placeholder="Confirm new password"
-                      secureTextEntry={!showConfirmPassword}
-                      placeholderTextColor={COLORS.textSecondary}
-                    />
-                    <TouchableOpacity 
-                      style={styles.passwordToggle}
-                      onPress={() => setShowConfirmPassword(!showConfirmPassword)}
-                    >
-                      <Ionicons 
-                        name={showConfirmPassword ? 'eye-off' : 'eye'} 
-                        size={24} 
-                        color={COLORS.textSecondary} 
-                      />
-                    </TouchableOpacity>
-                  </View>
-                </View>
-                
-                {passwordError ? (
-                  <View style={styles.errorContainer}>
-                    <Text style={styles.errorText}>{passwordError}</Text>
-                  </View>
-                ) : null}
-                
-                <View style={styles.formActions}>
-                  <TouchableOpacity 
-                    style={[styles.button, styles.cancelButton]}
-                    onPress={handleCloseChangePassword}
-                  >
-                    <Text style={styles.cancelButtonText}>Cancel</Text>
-                  </TouchableOpacity>
-                  
-                  <TouchableOpacity 
-                    style={[styles.button, styles.saveButton]}
-                    onPress={handleSavePassword}
-                    disabled={passwordLoading}
-                  >
-                    {passwordLoading ? (
-                      <ActivityIndicator color="#FFFFFF" size="small" />
-                    ) : (
-                      <Text style={styles.saveButtonText}>Update Password</Text>
-                    )}
-                  </TouchableOpacity>
-                </View>
-              </ScrollView>
+              </View>
+              
+              <View style={styles.profileItem}>
+                <Ionicons name="calendar-outline" size={20} color={COLORS.primary} />
+                <Text style={styles.profileLabel}>Joined:</Text>
+                <Text style={styles.profileValue}>{userData?.createdAt ? formatDate(userData.createdAt) : 'Unknown'}</Text>
+              </View>
+              
+              <TouchableOpacity 
+                style={styles.editButton}
+                onPress={handleOpenEditProfile}
+              >
+                <Ionicons name="create-outline" size={20} color="#FFFFFF" />
+                <Text style={styles.editButtonText}>Edit Profile</Text>
+              </TouchableOpacity>
             </View>
-          </KeyboardAvoidingView>
-        </Modal>
+            
+            {/* Account management section */}
+            <View style={styles.card}>
+              <Text style={styles.sectionTitle}>Account Management</Text>
+              
+              <TouchableOpacity 
+                style={styles.accountButton}
+                onPress={handleOpenChangePassword}
+              >
+                <Ionicons name="lock-closed-outline" size={24} color={COLORS.text} />
+                <Text style={styles.accountButtonText}>Change Password</Text>
+                <Ionicons name="chevron-forward" size={24} color={COLORS.textSecondary} />
+              </TouchableOpacity>
+              
+              <TouchableOpacity 
+                style={styles.accountButton}
+                onPress={handleLogout}
+              >
+                <Ionicons name="log-out-outline" size={24} color={COLORS.text} />
+                <Text style={styles.accountButtonText}>Logout</Text>
+                <Ionicons name="chevron-forward" size={24} color={COLORS.textSecondary} />
+              </TouchableOpacity>
+              
+              <TouchableOpacity 
+                style={[styles.accountButton, styles.deleteButton]}
+                onPress={handleDeleteAccount}
+              >
+                <Ionicons name="trash-outline" size={24} color={COLORS.error} />
+                <Text style={[styles.accountButtonText, styles.deleteText]}>Delete Account</Text>
+                <Ionicons name="chevron-forward" size={24} color={COLORS.textSecondary} />
+              </TouchableOpacity>
+            </View>
+          </>
+        )}
       </ScrollView>
+      
+      {/* Edit Profile Modal */}
+      <Modal
+        visible={editProfileVisible}
+        animationType="slide"
+        transparent={true}
+      >
+        <KeyboardAvoidingView
+          behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+          style={styles.modalContainer}
+        >
+          <View style={styles.modalContent}>
+            <View style={styles.modalHeader}>
+              <Text style={styles.modalTitle}>Edit Profile</Text>
+              <TouchableOpacity onPress={handleCloseEditProfile}>
+                <Ionicons name="close" size={24} color={COLORS.text} />
+              </TouchableOpacity>
+            </View>
+            
+            {editError ? (
+              <Text style={styles.modalError}>{editError}</Text>
+            ) : null}
+            
+            <View style={styles.formGroup}>
+              <Text style={styles.label}>Name</Text>
+              <TextInput
+                style={styles.input}
+                value={editName}
+                onChangeText={setEditName}
+                placeholder="Your name"
+                autoCapitalize="words"
+              />
+            </View>
+            
+            <View style={styles.formGroup}>
+              <Text style={styles.label}>Email</Text>
+              <TextInput
+                style={styles.input}
+                value={editEmail}
+                onChangeText={setEditEmail}
+                placeholder="your@email.com"
+                keyboardType="email-address"
+                autoCapitalize="none"
+              />
+            </View>
+            
+            <View style={styles.formGroup}>
+              <Text style={styles.label}>Phone (optional)</Text>
+              <TextInput
+                style={styles.input}
+                value={editPhone}
+                onChangeText={setEditPhone}
+                placeholder="Your phone number"
+                keyboardType="phone-pad"
+              />
+            </View>
+            
+            <View style={styles.formGroup}>
+              <Text style={styles.label}>Username</Text>
+              <TextInput
+                style={[styles.input, { backgroundColor: '#e0e0e0' }]}
+                value={editUsername}
+                editable={false}
+              />
+              <Text style={styles.helperText}>Username cannot be changed</Text>
+            </View>
+            
+            <TouchableOpacity 
+              style={styles.saveButton}
+              onPress={handleSaveProfile}
+              disabled={editLoading}
+            >
+              {editLoading ? (
+                <ActivityIndicator size="small" color="#FFFFFF" />
+              ) : (
+                <>
+                  <Ionicons name="save-outline" size={20} color="#FFFFFF" />
+                  <Text style={styles.saveButtonText}>Save Changes</Text>
+                </>
+              )}
+            </TouchableOpacity>
+          </View>
+        </KeyboardAvoidingView>
+      </Modal>
+      
+      {/* Change Password Modal */}
+      <Modal
+        visible={changePasswordVisible}
+        animationType="slide"
+        transparent={true}
+      >
+        <KeyboardAvoidingView
+          behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+          style={styles.modalContainer}
+        >
+          <View style={styles.modalContent}>
+            <View style={styles.modalHeader}>
+              <Text style={styles.modalTitle}>Change Password</Text>
+              <TouchableOpacity onPress={handleCloseChangePassword}>
+                <Ionicons name="close" size={24} color={COLORS.text} />
+              </TouchableOpacity>
+            </View>
+            
+            {passwordError ? (
+              <Text style={styles.modalError}>{passwordError}</Text>
+            ) : null}
+            
+            <View style={styles.formGroup}>
+              <Text style={styles.label}>Current Password</Text>
+              <View style={styles.passwordContainer}>
+                <TextInput
+                  style={styles.passwordInput}
+                  value={currentPassword}
+                  onChangeText={setCurrentPassword}
+                  placeholder="Enter current password"
+                  secureTextEntry={!showCurrentPassword}
+                />
+                <TouchableOpacity 
+                  style={styles.passwordToggle}
+                  onPress={() => setShowCurrentPassword(!showCurrentPassword)}
+                >
+                  <Ionicons 
+                    name={showCurrentPassword ? "eye-off-outline" : "eye-outline"} 
+                    size={24} 
+                    color={COLORS.textSecondary} 
+                  />
+                </TouchableOpacity>
+              </View>
+            </View>
+            
+            <View style={styles.formGroup}>
+              <Text style={styles.label}>New Password</Text>
+              <View style={styles.passwordContainer}>
+                <TextInput
+                  style={styles.passwordInput}
+                  value={newPassword}
+                  onChangeText={setNewPassword}
+                  placeholder="Enter new password"
+                  secureTextEntry={!showNewPassword}
+                />
+                <TouchableOpacity 
+                  style={styles.passwordToggle}
+                  onPress={() => setShowNewPassword(!showNewPassword)}
+                >
+                  <Ionicons 
+                    name={showNewPassword ? "eye-off-outline" : "eye-outline"} 
+                    size={24} 
+                    color={COLORS.textSecondary} 
+                  />
+                </TouchableOpacity>
+              </View>
+            </View>
+            
+            <View style={styles.formGroup}>
+              <Text style={styles.label}>Confirm New Password</Text>
+              <View style={styles.passwordContainer}>
+                <TextInput
+                  style={styles.passwordInput}
+                  value={confirmPassword}
+                  onChangeText={setConfirmPassword}
+                  placeholder="Confirm new password"
+                  secureTextEntry={!showConfirmPassword}
+                />
+                <TouchableOpacity 
+                  style={styles.passwordToggle}
+                  onPress={() => setShowConfirmPassword(!showConfirmPassword)}
+                >
+                  <Ionicons 
+                    name={showConfirmPassword ? "eye-off-outline" : "eye-outline"} 
+                    size={24} 
+                    color={COLORS.textSecondary} 
+                  />
+                </TouchableOpacity>
+              </View>
+            </View>
+            
+            <Text style={styles.passwordRequirements}>
+              Password must contain at least 8 characters, including uppercase, lowercase, number and special character.
+            </Text>
+            
+            <TouchableOpacity 
+              style={styles.saveButton}
+              onPress={handleSavePassword}
+              disabled={passwordLoading}
+            >
+              {passwordLoading ? (
+                <ActivityIndicator size="small" color="#FFFFFF" />
+              ) : (
+                <>
+                  <Ionicons name="save-outline" size={20} color="#FFFFFF" />
+                  <Text style={styles.saveButtonText}>Change Password</Text>
+                </>
+              )}
+            </TouchableOpacity>
+          </View>
+        </KeyboardAvoidingView>
+      </Modal>
     </SafeAreaView>
   );
 }
 
 const styles = StyleSheet.create({
-  safeAreaContainer: {
+  safeArea: {
     flex: 1,
     backgroundColor: COLORS.background,
   },
   container: {
     flex: 1,
-    backgroundColor: COLORS.background,
+    padding: 16,
   },
-  contentContainer: {
-    padding: 20,
-    paddingBottom: 40,
+  loadingContainer: {
+    flex: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
+    paddingVertical: 40,
   },
-  profileCard: {
+  loadingText: {
+    marginTop: 16,
+    fontSize: 16,
+    color: COLORS.textSecondary,
+  },
+  errorContainer: {
+    flex: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
+    paddingVertical: 40,
+  },
+  errorText: {
+    marginTop: 16,
+    fontSize: 16,
+    color: COLORS.error,
+    textAlign: 'center',
+    marginBottom: 20,
+  },
+  retryButton: {
+    backgroundColor: COLORS.primary,
+    paddingHorizontal: 20,
+    paddingVertical: 10,
+    borderRadius: 8,
+  },
+  retryButtonText: {
+    color: COLORS.secondary,
+    fontWeight: 'bold',
+  },
+  cacheNotice: {
+    fontSize: 12,
+    color: COLORS.textSecondary,
+    fontStyle: 'italic',
+    marginTop: 4,
+  },
+  header: {
+    flexDirection: 'row',
+    alignItems: 'center',
     backgroundColor: COLORS.cardBg,
+    padding: 16,
     borderRadius: 12,
-    overflow: 'hidden',
+    marginBottom: 16,
     shadowColor: '#000',
     shadowOffset: { width: 0, height: 2 },
     shadowOpacity: 0.1,
     shadowRadius: 4,
     elevation: 2,
   },
-  loadingContainer: {
-    flex: 1,
-    justifyContent: 'center',
-    alignItems: 'center',
-    backgroundColor: COLORS.background,
-    padding: 20,
-  },
-  loadingText: {
-    marginTop: 10,
-    fontSize: 16,
-    color: COLORS.text,
-  },
-  header: {
-    backgroundColor: COLORS.primary,
-    paddingVertical: 30,
-    alignItems: 'center',
-    paddingHorizontal: 20,
-  },
   avatarContainer: {
-    marginBottom: 15,
-  },
-  avatar: {
     width: 80,
     height: 80,
     borderRadius: 40,
-    backgroundColor: COLORS.secondary,
+    backgroundColor: COLORS.primary,
     justifyContent: 'center',
     alignItems: 'center',
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.2,
-    shadowRadius: 4,
-    elevation: 3,
+    marginRight: 16,
   },
   avatarText: {
     fontSize: 36,
     fontWeight: 'bold',
-    color: COLORS.primary,
+    color: COLORS.secondary,
+  },
+  headerTextContainer: {
+    flex: 1,
   },
   userName: {
     fontSize: 24,
     fontWeight: 'bold',
-    color: COLORS.secondary,
-    marginBottom: 5,
+    color: COLORS.text,
+    marginBottom: 4,
   },
-  userHandle: {
+  userInfo: {
     fontSize: 16,
-    color: 'rgba(255, 255, 255, 0.8)',
+    color: COLORS.textSecondary,
   },
-  infoSection: {
-    padding: 20,
-    borderBottomWidth: 1,
-    borderBottomColor: COLORS.border,
+  
+  card: {
+    backgroundColor: COLORS.cardBg,
+    padding: 16,
+    borderRadius: 12,
+    marginBottom: 16,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.1,
+    shadowRadius: 4,
+    elevation: 2,
   },
   sectionTitle: {
     fontSize: 18,
+    fontWeight: 'bold',
+    color: COLORS.text,
+    marginBottom: 16,
+  },
+  profileItem: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginBottom: 16,
+  },
+  profileLabel: {
+    fontSize: 16,
     fontWeight: '600',
     color: COLORS.text,
-    marginBottom: 15,
+    marginLeft: 10,
+    width: 80,
   },
-  infoItem: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    marginBottom: 15,
-  },
-  infoIcon: {
-    marginRight: 12,
-    width: 22,
-  },
-  infoContent: {
+  profileValue: {
     flex: 1,
-  },
-  infoLabel: {
-    fontSize: 14,
-    color: COLORS.textSecondary,
-    marginBottom: 4,
-  },
-  infoValue: {
     fontSize: 16,
-    color: COLORS.text,
-    fontWeight: '500',
+    color: COLORS.textSecondary,
   },
-  actionsSection: {
-    padding: 20,
-  },
-  actionButton: {
+  
+  editButton: {
+    backgroundColor: COLORS.primary,
     flexDirection: 'row',
     alignItems: 'center',
-    paddingVertical: 16,
+    justifyContent: 'center',
+    padding: 12,
+    borderRadius: 8,
+    marginTop: 8,
+  },
+  editButtonText: {
+    color: COLORS.secondary,
+    fontWeight: 'bold',
+    fontSize: 16,
+    marginLeft: 8,
+  },
+  
+  accountButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingVertical: 14,
     borderBottomWidth: 1,
     borderBottomColor: COLORS.border,
   },
-  actionText: {
+  accountButtonText: {
     flex: 1,
-    marginLeft: 12,
     fontSize: 16,
     color: COLORS.text,
+    marginLeft: 16,
   },
-  dangerButton: {
+  deleteButton: {
     borderBottomWidth: 0,
-    marginTop: 8,
   },
-  dangerText: {
-    flex: 1,
-    marginLeft: 12,
-    fontSize: 16,
+  deleteText: {
     color: COLORS.error,
   },
+  
   modalContainer: {
     flex: 1,
-    backgroundColor: 'rgba(0, 0, 0, 0.5)',
-    justifyContent: 'center',
-    alignItems: 'center',
+    justifyContent: 'flex-end',
+    backgroundColor: 'rgba(0,0,0,0.5)',
   },
   modalContent: {
     backgroundColor: COLORS.cardBg,
-    borderRadius: 12,
-    width: '90%',
+    padding: 20,
+    borderTopLeftRadius: 20,
+    borderTopRightRadius: 20,
     maxHeight: '80%',
-    overflow: 'hidden',
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.2,
-    shadowRadius: 8,
-    elevation: 5,
   },
   modalHeader: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
-    padding: 16,
-    borderBottomWidth: 1,
-    borderBottomColor: COLORS.border,
+    marginBottom: 20,
   },
   modalTitle: {
-    fontSize: 18,
+    fontSize: 20,
     fontWeight: 'bold',
-    color: COLORS.primary,
+    color: COLORS.text,
   },
-  modalForm: {
-    padding: 20,
+  modalError: {
+    color: COLORS.error,
+    marginBottom: 16,
+    padding: 8,
+    borderRadius: 4,
+    backgroundColor: 'rgba(255, 107, 107, 0.1)',
   },
-  modalDescription: {
-    fontSize: 14,
-    color: COLORS.textSecondary,
-    marginBottom: 20,
-  },
+  
   formGroup: {
-    marginBottom: 20,
+    marginBottom: 16,
   },
   label: {
     fontSize: 16,
-    marginBottom: 8,
-    fontWeight: '500',
     color: COLORS.text,
+    marginBottom: 8,
   },
   input: {
-    height: 50,
-    borderWidth: 1, 
-    borderColor: COLORS.border,
-    borderRadius: 8,
-    paddingHorizontal: 15,
-    fontSize: 16,
     backgroundColor: COLORS.inputBg,
-    color: COLORS.text,
-  },
-  requiredStar: {
-    color: COLORS.error,
-  },
-  passwordContainer: {
-    position: 'relative',
-  },
-  passwordInput: {
-    paddingRight: 50,
-  },
-  passwordToggle: {
-    position: 'absolute',
-    right: 12,
-    top: 13,
-  },
-  passwordHint: {
-    fontSize: 12,
-    color: COLORS.textSecondary,
-    marginTop: 5,
-  },
-  errorContainer: {
-    backgroundColor: 'rgba(255, 107, 107, 0.1)',
     padding: 12,
     borderRadius: 8,
-    marginBottom: 16,
-    borderWidth: 1,
-    borderColor: COLORS.error,
-  },
-  errorText: {
-    color: COLORS.error,
-    textAlign: 'center',
-  },
-  formActions: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    marginTop: 16,
-  },
-  button: {
-    borderRadius: 8,
-    height: 50,
-    justifyContent: 'center',
-    alignItems: 'center',
-    flex: 1,
-  },
-  cancelButton: {
-    backgroundColor: '#F0F0F0',
-    marginRight: 10,
-  },
-  cancelButtonText: {
-    color: COLORS.text,
     fontSize: 16,
-    fontWeight: '500',
+    borderWidth: 1,
+    borderColor: COLORS.border,
   },
+  helperText: {
+    fontSize: 12,
+    color: COLORS.textSecondary,
+    marginTop: 4,
+  },
+  
+  passwordContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: COLORS.inputBg,
+    borderRadius: 8,
+    borderWidth: 1,
+    borderColor: COLORS.border,
+  },
+  passwordInput: {
+    flex: 1,
+    padding: 12,
+    fontSize: 16,
+  },
+  passwordToggle: {
+    padding: 10,
+  },
+  passwordRequirements: {
+    fontSize: 12,
+    color: COLORS.textSecondary,
+    marginBottom: 16,
+    lineHeight: 18,
+  },
+  
   saveButton: {
     backgroundColor: COLORS.primary,
-    marginLeft: 10,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    padding: 14,
+    borderRadius: 8,
+    marginTop: 8,
   },
   saveButtonText: {
     color: COLORS.secondary,
-    fontSize: 16,
     fontWeight: 'bold',
+    fontSize: 16,
+    marginLeft: 8,
   },
 }); 
