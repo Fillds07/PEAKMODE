@@ -2,25 +2,73 @@
 
 A mobile application for energy management and wellness tracking.
 
-## Running in Separate Terminals
+## Quick Start Guide
 
-**Terminal 1: Start Backend and MongoDB**
+After cloning the repository, follow these simple steps:
+
+### 1. First-Time Setup
+
+Run the initiate script to set up your development environment:
+
 ```bash
-npm run start:backend
+chmod +x initiate.sh  # Make script executable
+./initiate.sh
 ```
 
-**Terminal 2: Start Frontend**
+This script will:
+- Install required software (Node.js, MongoDB, Expo CLI)
+- Make all scripts executable
+- Configure your environment for PEAKMODE development
+
+### 2. Install Dependencies
+
+Install all project dependencies:
+
 ```bash
-npm run start:frontend
+./install.sh
 ```
 
-## Alternative: Run Everything in One Terminal
+### 3. Start the Application
+
+Start the backend (in one terminal):
 
 ```bash
-npm run start:all
+./start-backend.sh
+```
+
+Start the frontend (in another terminal):
+
+```bash
+./start-frontend.sh
+```
+
+## Additional Features
+
+### Tunneling for External Access
+
+Make your backend accessible from outside your network:
+
+```bash
+./start-backend-tunnel.sh
+```
+
+This creates an ngrok tunnel that gives you a public URL to share with others.
+
+### Expo Tunnel for Testing on Devices
+
+Test the frontend on devices not on your local network:
+
+```bash
+./start-frontend.sh --tunnel
 ```
 
 ## Stopping Services
 
-- Press `Ctrl+C` in each terminal to stop that component
-- MongoDB: `brew services stop mongodb/brew/mongodb-community@7.0`
+- Press `Ctrl+C` in each terminal to stop running services
+- To stop MongoDB: `brew services stop mongodb/brew/mongodb-community@7.0`
+
+## Troubleshooting
+
+- **MongoDB connection problems**: Try `brew services restart mongodb/brew/mongodb-community@7.0`
+- **Frontend dependency issues**: The install script uses `--legacy-peer-deps` to handle conflicts
+- **Networking issues**: Use the tunneling options mentioned above 
