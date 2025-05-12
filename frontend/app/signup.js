@@ -166,11 +166,23 @@ export default function SignupScreen() {
         const result = await authService.register(userData);
         console.log('Registration successful:', result);
         
-        // Show success alert and navigate to login
+        // Show success alert and navigate to security questions
         Alert.alert(
           'Registration Successful',
-          'Your account has been created. Please login.',
-          [{ text: 'OK', onPress: () => router.push('/') }]
+          'Your account has been created. Please set up your security questions for password recovery.',
+          [{ 
+            text: 'Continue', 
+            onPress: () => {
+              // Clear any errors before navigating
+              setError('');
+              setNetworkError(false);
+              // Navigate to security questions with username as parameter
+              router.replace({
+                pathname: '/security-questions',
+                params: { username }
+              });
+            } 
+          }]
         );
       } catch (error) {
         console.error('Registration error:', error);
@@ -232,6 +244,12 @@ export default function SignupScreen() {
             </View>
             
             <Text style={styles.headerText}>Create Account</Text>
+            
+            {error && !networkError && (
+              <View style={styles.errorBelowTitle}>
+                <Text style={styles.errorText}>{error}</Text>
+              </View>
+            )}
             
             {networkError && (
               <View style={styles.errorContainer}>
@@ -366,12 +384,6 @@ export default function SignupScreen() {
                 </View>
               </View>
               
-              {error && !networkError && (
-                <View style={styles.errorMessageContainer}>
-                  <Text style={styles.errorText}>{error}</Text>
-                </View>
-              )}
-              
               <TouchableOpacity
                 style={styles.signupButton}
                 onPress={handleSignup}
@@ -447,7 +459,7 @@ const styles = StyleSheet.create({
     fontSize: 24,
     fontWeight: 'bold',
     color: COLORS.text,
-    marginBottom: 24,
+    marginBottom: 10,
     textAlign: 'center',
   },
   formContainer: {
@@ -509,19 +521,25 @@ const styles = StyleSheet.create({
     marginBottom: 20,
     borderWidth: 1,
     borderColor: COLORS.error,
+    width: '100%',
   },
   errorText: {
     color: COLORS.error,
     textAlign: 'center',
-    marginBottom: 8,
+    fontWeight: 'bold',
+    fontSize: 15,
   },
-  errorMessageContainer: {
+  errorBelowTitle: {
+    marginBottom: 20,
+    paddingVertical: 10,
     backgroundColor: 'rgba(255, 107, 107, 0.1)',
-    padding: 12,
-    borderRadius: 8,
-    marginBottom: 16,
     borderWidth: 1,
     borderColor: COLORS.error,
+    borderRadius: 8,
+    paddingHorizontal: 12,
+    height: 50,
+    width: '100%',
+    justifyContent: 'center',
   },
   retryButton: {
     backgroundColor: '#F0F0F0',

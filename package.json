@@ -6,16 +6,12 @@
   "scripts": {
     "frontend": "cd frontend && npm start",
     "backend": "cd backend && npm run dev",
-    "start": "concurrently --kill-others --prefix \"[{name}]\" --names \"BACKEND,FRONTEND\" --prefix-colors \"cyan.bold,green.bold\" \"npm run backend\" \"npm run frontend\"",
-    "mongo:start": "brew services start mongodb/brew/mongodb-community@7.0",
-    "mongo:stop": "brew services stop mongodb/brew/mongodb-community@7.0",
     "install:all": "npm install && npm run install:backend && npm run install:frontend",
     "install:backend": "cd backend && npm install",
     "install:frontend": "cd frontend && npm install --legacy-peer-deps",
     "test": "echo \"Error: no test specified\" && exit 1",
-    "start:backend": "./start-backend.sh",
-    "start:frontend": "./start-frontend.sh",
-    "start:all": "./start-all-in-one.sh"
+    "start:backend": "./backend/start-backend.sh",
+    "start:frontend": "./start-frontend.sh"
   },
   "keywords": [
     "peakmode",

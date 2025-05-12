@@ -1,471 +1,482 @@
-/**
- * Authentication Controller
- * 
- * Handles user authentication processes including:
- * - User registration
- * - User login
- * - Password reset flow (forgot password & reset password)
- */
+const bcrypt = require('bcrypt');
 const jwt = require('jsonwebtoken');
-const User = require('../models/User');
-const crypto = require('crypto');
-const mongoose = require('mongoose');
+const { runQuery, getAll, getOne } = require('../models/database');
+
+// JWT secret key
+const JWT_SECRET = process.env.JWT_SECRET || 'peakmode-secret-key';
+const JWT_EXPIRES_IN = process.env.JWT_EXPIRES_IN || '7d';
+
+// Temporary store for password reset sessions
+// In a production app, this would be in Redis or another database
+const resetSessions = new Map();
 
 /**
- * Creates a JWT token for the given user ID
- * @param {string} id - User ID to include in the token
- * @returns {string} Signed JWT token
+ * User signup controller
  */
-const signToken = (id) => {
-  return jwt.sign({ id }, process.env.JWT_SECRET, {
-    expiresIn: '30d',
-  });
-};
-
-/**
- * Creates a token, removes sensitive user data, and sends the response
- * @param {Object} user - User document from MongoDB
- * @param {number} statusCode - HTTP status code for the response
- * @param {Object} res - Express response object
- */
-const createSendToken = (user, statusCode, res) => {
-  const token = signToken(user._id);
-
-  // Remove password from output for security
-  user.password = undefined;
-
-  res.status(statusCode).json({
-    status: 'success',
-    token,
-    data: {
-      user,
-    },
-  });
-};
-
-/**
- * Register a new user
- * @route POST /api/auth/signup
- * @access Public
- */
-exports.signup = async (req, res, next) => {
+exports.signup = async (req, res) => {
   try {
-    const { name, username, email, phone, password } = req.body;
-
-    console.log('Signup attempt for:', { username, email, phone });
-
-    // Verify MongoDB connection
-    if (!isMongoDBConnected()) {
-      return sendDatabaseConnectionError(res);
-    }
-
-    // Check for existing users
-    const existingUserError = await checkExistingUser(email, username);
-    if (existingUserError) {
-      return res.status(existingUserError.status).json(existingUserError.response);
-    }
-
-    // Create new user
-    try {
-      console.log('Creating new user:', { name, username, email, phone });
-      const newUser = await User.create({
-        name,
-        username,
-        email,
-        phone,
-        password,
+    const { username, email, password, name } = req.body;
+    
+    // Basic validation
+    if (!username || !email || !password || !name) {
+      return res.status(400).json({
+        status: 'error',
+        message: 'All fields are required (username, email, password, name)'
       });
-      
-      console.log('User created successfully:', newUser._id);
-      createSendToken(newUser, 201, res);
-    } catch (validationError) {
-      handleValidationError(validationError, res);
     }
+    
+    // Check if username or email already exists
+    const existingUser = await getOne(
+      'SELECT username, email FROM users WHERE username = ? OR email = ?', 
+      [username, email]
+    );
+    
+    if (existingUser) {
+      if (existingUser.username === username) {
+        return res.status(400).json({
+          status: 'error',
+          message: 'Username is already taken'
+        });
+      }
+      
+      if (existingUser.email === email) {
+        return res.status(400).json({
+          status: 'error',
+          message: 'Email is already registered'
+        });
+      }
+    }
+    
+    // Hash password
+    const salt = await bcrypt.genSalt(10);
+    const hashedPassword = await bcrypt.hash(password, salt);
+    
+    // Create user
+    const result = await runQuery(
+      'INSERT INTO users (username, email, name, password) VALUES (?, ?, ?, ?)',
+      [username, email, name, hashedPassword]
+    );
+    
+    // Generate JWT token
+    const token = jwt.sign(
+      { id: result.lastID, username },
+      JWT_SECRET,
+      { expiresIn: JWT_EXPIRES_IN }
+    );
+    
+    res.status(201).json({
+      status: 'success',
+      message: 'User registered successfully',
+      data: {
+        user: {
+          id: result.lastID,
+          username,
+          email,
+          name
+        },
+        token
+      }
+    });
   } catch (error) {
     console.error('Signup error:', error);
     res.status(500).json({
       status: 'error',
-      message: error.message || 'Error creating user',
-      details: { 
-        type: 'server_error',
-        stack: process.env.NODE_ENV === 'development' ? error.stack : undefined
-      }
+      message: 'An error occurred during registration'
     });
   }
 };
 
 /**
- * Check if MongoDB is connected
- * @returns {boolean} True if connected
+ * User login controller
  */
-const isMongoDBConnected = () => {
-  return mongoose.connection.readyState === 1;
-};
-
-/**
- * Send database connection error response
- * @param {Object} res - Express response object
- */
-const sendDatabaseConnectionError = (res) => {
-  console.error('MongoDB not connected - signup failed');
-  return res.status(500).json({
-    status: 'error',
-    message: 'Database connection issue. Please try again later.',
-  });
-};
-
-/**
- * Check if a user with the given email or username already exists
- * @param {string} email - Email to check
- * @param {string} username - Username to check
- * @returns {Object|null} Error object or null if no existing user
- */
-const checkExistingUser = async (email, username) => {
-  // Check if email already exists
-  const existingEmail = await User.findOne({ email });
-  if (existingEmail) {
-    console.log('Signup failed: Email already in use');
-    return {
-      status: 409,
-      response: {
-        status: 'error',
-        message: 'Email already in use',
-        details: {
-          field: 'email',
-          exists: true,
-          id: existingEmail._id,
-          createdAt: existingEmail.createdAt
-        }
-      }
-    };
-  }
-
-  // Check if username already exists
-  const existingUsername = await User.findOne({ username });
-  if (existingUsername) {
-    console.log('Signup failed: Username already in use');
-    return {
-      status: 409,
-      response: {
-        status: 'error',
-        message: 'Username already in use',
-        details: {
-          field: 'username',
-          exists: true,
-          id: existingUsername._id,
-          createdAt: existingUsername.createdAt
-        }
-      }
-    };
-  }
-
-  return null;
-};
-
-/**
- * Handle validation errors during user creation
- * @param {Error} validationError - Error object from Mongoose validation
- * @param {Object} res - Express response object
- * @returns {Object} Response with error details
- */
-const handleValidationError = (validationError, res) => {
-  // Handle mongoose validation errors
-  if (validationError.name === 'ValidationError') {
-    const messages = Object.values(validationError.errors).map(err => err.message);
-    console.log('Validation error during signup:', messages[0]);
-    return res.status(400).json({
-      status: 'error',
-      message: messages[0], // Return the first validation error
-      details: {
-        type: 'validation',
-        errors: messages
-      }
-    });
-  }
-  
-  // Handle MongoDB duplicate key errors
-  if (validationError.code === 11000) {
-    const field = Object.keys(validationError.keyPattern)[0];
-    console.log(`Duplicate key error: ${field} already exists`);
-    return res.status(409).json({
-      status: 'error',
-      message: `${field.charAt(0).toUpperCase() + field.slice(1)} already in use`,
-      details: {
-        field: field,
-        exists: true,
-        value: validationError.keyValue[field]
-      }
-    });
-  }
-  
-  console.error('Error creating user:', validationError);
-  throw validationError; // Re-throw if it's not a validation error
-};
-
-/**
- * Login user
- * @route POST /api/auth/login
- * @access Public
- */
-exports.login = async (req, res, next) => {
+exports.login = async (req, res) => {
   try {
     const { username, password } = req.body;
-
-    // Check if username and password exist
+    
+    // Basic validation
     if (!username || !password) {
       return res.status(400).json({
         status: 'error',
-        message: 'Please provide username and password',
+        message: 'Username and password are required'
       });
     }
-
-    // Check if user exists && password is correct
-    const user = await User.findOne({ username }).select('+password');
-
-    if (!user || !(await user.matchPassword(password))) {
+    
+    // Find user by username
+    const user = await getOne(
+      'SELECT id, username, email, name, password FROM users WHERE username = ?',
+      [username]
+    );
+    
+    // If user not found or password doesn't match
+    if (!user || !(await bcrypt.compare(password, user.password))) {
       return res.status(401).json({
         status: 'error',
-        message: 'Incorrect username or password',
+        message: 'Invalid username or password'
       });
     }
-
-    // If everything ok, send token to client
-    createSendToken(user, 200, res);
+    
+    // Generate JWT token
+    const token = jwt.sign(
+      { id: user.id, username: user.username },
+      JWT_SECRET,
+      { expiresIn: JWT_EXPIRES_IN }
+    );
+    
+    // Remove password from response
+    const { password: userPassword, ...userData } = user;
+    
+    res.status(200).json({
+      status: 'success',
+      message: 'Login successful',
+      data: {
+        user: userData,
+        token
+      }
+    });
   } catch (error) {
     console.error('Login error:', error);
     res.status(500).json({
       status: 'error',
-      message: error.message || 'Error logging in',
+      message: 'An error occurred during login'
     });
   }
 };
 
 /**
- * Send password reset token to user's email
- * @route POST /api/auth/forgotPassword
- * @access Public
+ * Get all security questions
  */
-exports.forgotPassword = async (req, res, next) => {
+exports.getSecurityQuestions = async (req, res) => {
   try {
-    // Import the email service
-    const emailService = require('../services/email.service');
+    const questions = await getAll('SELECT id, question FROM security_questions');
     
-    const { username, email } = req.body;
+    res.status(200).json({
+      status: 'success',
+      data: {
+        questions
+      }
+    });
+  } catch (error) {
+    console.error('Error fetching security questions:', error);
+    res.status(500).json({
+      status: 'error',
+      message: 'An error occurred while fetching security questions'
+    });
+  }
+};
+
+/**
+ * Save user security answers (during registration or profile update)
+ */
+exports.saveUserSecurityAnswers = async (req, res) => {
+  try {
+    const { userId, answers } = req.body;
     
-    // Validate we have at least one identifier
-    if (!username && !email) {
+    // Basic validation
+    if (!userId || !answers || !Array.isArray(answers) || answers.length < 3) {
       return res.status(400).json({
         status: 'error',
-        message: 'Please provide username or email to reset your password',
+        message: 'User ID and at least 3 security answers are required'
       });
     }
     
-    // Find user by provided identifier
-    const { user, identifierType } = await findUserByIdentifier(username, email);
-    
-    console.log(`Password reset request by ${identifierType}: ${username || email}`);
-    
-    // For security, don't reveal if user exists or not
+    // Verify user exists
+    const user = await getOne('SELECT id FROM users WHERE id = ?', [userId]);
     if (!user) {
-      return sendPasswordResetResponse(res, identifierType, false);
+      return res.status(404).json({
+        status: 'error',
+        message: 'User not found'
+      });
     }
-
-    // Generate reset token and save to user record
-    const resetToken = await generateAndSaveResetToken(user);
-
-    // Send reset token via email
-    const emailSent = await sendPasswordResetTokenEmail(user, resetToken, emailService);
     
-    // Return appropriate response
-    return sendPasswordResetResponse(res, identifierType, emailSent);
+    // Begin transaction
+    await runQuery('BEGIN TRANSACTION');
     
+    try {
+      // Clear existing answers
+      await runQuery('DELETE FROM user_security_answers WHERE user_id = ?', [userId]);
+      
+      // Insert new answers
+      for (const answer of answers) {
+        // Hash the answer for security
+        const hashedAnswer = await bcrypt.hash(answer.answer.toLowerCase(), 10);
+        
+        await runQuery(
+          'INSERT INTO user_security_answers (user_id, question_id, answer) VALUES (?, ?, ?)',
+          [userId, answer.questionId, hashedAnswer]
+        );
+      }
+      
+      // Commit transaction
+      await runQuery('COMMIT');
+      
+      res.status(200).json({
+        status: 'success',
+        message: 'Security answers saved successfully'
+      });
+    } catch (error) {
+      // Rollback transaction on error
+      await runQuery('ROLLBACK');
+      throw error;
+    }
   } catch (error) {
-    console.error('Forgot password error:', error);
+    console.error('Error saving security answers:', error);
     res.status(500).json({
       status: 'error',
-      message: error.message || 'Error processing password reset',
+      message: 'An error occurred while saving security answers'
     });
   }
 };
 
 /**
- * Find a user by username or email
- * @param {string} username - Username to search for
- * @param {string} email - Email to search for
- * @returns {Object} User object and identifierType
+ * Find username by email
  */
-const findUserByIdentifier = async (username, email) => {
-  let user = null;
-  let identifierType = '';
-  
-  if (username) {
-    user = await User.findOne({ username });
-    identifierType = 'username';
-  } else if (email) {
-    user = await User.findOne({ email });
-    identifierType = 'email';
+exports.findUsername = async (req, res) => {
+  try {
+    const { email } = req.body;
+    
+    // Basic validation
+    if (!email) {
+      return res.status(400).json({
+        status: 'error',
+        message: 'Email is required'
+      });
+    }
+    
+    // Find user by email
+    const user = await getOne('SELECT username FROM users WHERE email = ?', [email]);
+    
+    if (!user) {
+      return res.status(404).json({
+        status: 'error',
+        message: 'No account found with this email'
+      });
+    }
+    
+    res.status(200).json({
+      status: 'success',
+      data: {
+        username: user.username
+      }
+    });
+  } catch (error) {
+    console.error('Error finding username:', error);
+    res.status(500).json({
+      status: 'error',
+      message: 'An error occurred while retrieving username'
+    });
   }
-  
-  return { user, identifierType };
 };
 
 /**
- * Generate a reset token and save it to the user record
- * @param {Object} user - User document from MongoDB
- * @returns {string} Plain text reset token (before hashing)
+ * Get user's security questions
  */
-const generateAndSaveResetToken = async (user) => {
-  // Generate the random reset token - we'll use a shorter, more user-friendly token
-  // that can be easily typed into a mobile app (8 characters)
-  const resetToken = crypto.randomBytes(4).toString('hex'); // 8 characters
-
-  // Store the hashed version of the token in the database for security
-  user.resetPasswordToken = crypto
-    .createHash('sha256')
-    .update(resetToken)
-    .digest('hex');
-  
-  user.resetPasswordExpire = Date.now() + 10 * 60 * 1000; // 10 minutes
-  
-  await user.save({ validateBeforeSave: false });
-  
-  return resetToken;
+exports.getUserSecurityQuestions = async (req, res) => {
+  try {
+    const { username } = req.body;
+    
+    // Basic validation
+    if (!username) {
+      return res.status(400).json({
+        status: 'error',
+        message: 'Username is required'
+      });
+    }
+    
+    // Find user
+    const user = await getOne('SELECT id FROM users WHERE username = ?', [username]);
+    
+    if (!user) {
+      return res.status(404).json({
+        status: 'error',
+        message: 'User not found'
+      });
+    }
+    
+    // Get user's security questions
+    const questions = await getAll(`
+      SELECT sq.id, sq.question 
+      FROM security_questions sq
+      JOIN user_security_answers usa ON sq.id = usa.question_id
+      WHERE usa.user_id = ?
+      ORDER BY sq.id
+    `, [user.id]);
+    
+    if (!questions || questions.length === 0) {
+      return res.status(404).json({
+        status: 'error',
+        message: 'No security questions found for this user'
+      });
+    }
+    
+    res.status(200).json({
+      status: 'success',
+      data: {
+        questions: questions.map(q => ({
+          id: q.id,
+          question: q.question
+        }))
+      }
+    });
+  } catch (error) {
+    console.error('Error getting user security questions:', error);
+    res.status(500).json({
+      status: 'error',
+      message: 'An error occurred while retrieving security questions'
+    });
+  }
 };
 
 /**
- * Send reset token email to the user
- * @param {Object} user - User document from MongoDB
- * @param {string} resetToken - Plain text reset token
- * @param {Object} emailService - Email service instance
- * @returns {boolean} True if email was sent successfully
+ * Verify user's security question answers
  */
-const sendPasswordResetTokenEmail = async (user, resetToken, emailService) => {
-  let emailSent = false;
+exports.verifySecurityAnswers = async (req, res) => {
+  try {
+    const { username, answers } = req.body;
+    
+    // Basic validation
+    if (!username || !answers || !Array.isArray(answers)) {
+      return res.status(400).json({
+        status: 'error',
+        message: 'Username and answers are required'
+      });
+    }
+    
+    // Find user
+    const user = await getOne('SELECT id FROM users WHERE username = ?', [username]);
+    
+    if (!user) {
+      return res.status(404).json({
+        status: 'error',
+        message: 'User not found'
+      });
+    }
+    
+    // Verify each answer
+    let correctAnswers = 0;
+    for (const answer of answers) {
+      // Get stored hash for this question
+      const storedAnswer = await getOne(
+        'SELECT answer FROM user_security_answers WHERE user_id = ? AND question_id = ?',
+        [user.id, answer.questionId]
+      );
+      
+      if (storedAnswer) {
+        // Compare answer (case-insensitive)
+        const isCorrect = await bcrypt.compare(answer.answer.toLowerCase(), storedAnswer.answer);
+        if (isCorrect) {
+          correctAnswers++;
+        }
+      }
+    }
+    
+    // Require all answers to be correct
+    if (correctAnswers !== answers.length) {
+      return res.status(401).json({
+        status: 'error',
+        message: 'Incorrect security answers'
+      });
+    }
+    
+    // Generate a temporary reset token
+    const resetToken = generateResetToken();
+    
+    // Store reset session
+    resetSessions.set(resetToken, {
+      userId: user.id,
+      username,
+      createdAt: Date.now(),
+      expiresAt: Date.now() + 10 * 60 * 1000 // 10 minutes
+    });
+    
+    res.status(200).json({
+      status: 'success',
+      message: 'Security answers verified',
+      data: {
+        resetToken
+      }
+    });
+  } catch (error) {
+    console.error('Error verifying security answers:', error);
+    res.status(500).json({
+      status: 'error',
+      message: 'An error occurred while verifying security answers'
+    });
+  }
+};
 
-  // Send via email if available
-  if (user.email) {
-    emailSent = await emailService.sendPasswordResetEmail(
-      user.email,
-      user.username,
-      resetToken // Send the plain token to the user via email
+/**
+ * Reset password with token from security questions flow
+ */
+exports.resetPassword = async (req, res) => {
+  try {
+    const { resetToken, password } = req.body;
+    
+    // Basic validation
+    if (!resetToken || !password) {
+      return res.status(400).json({
+        status: 'error',
+        message: 'Reset token and new password are required'
+      });
+    }
+    
+    // Verify reset token
+    const session = resetSessions.get(resetToken);
+    
+    if (!session) {
+      return res.status(401).json({
+        status: 'error',
+        message: 'Invalid or expired reset token'
+      });
+    }
+    
+    // Check if token is expired
+    if (session.expiresAt < Date.now()) {
+      // Remove expired token
+      resetSessions.delete(resetToken);
+      
+      return res.status(401).json({
+        status: 'error',
+        message: 'Reset token has expired'
+      });
+    }
+    
+    // Hash new password
+    const salt = await bcrypt.genSalt(10);
+    const hashedPassword = await bcrypt.hash(password, salt);
+    
+    // Update user password
+    await runQuery(
+      'UPDATE users SET password = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?',
+      [hashedPassword, session.userId]
     );
-    console.log(`Email sent status: ${emailSent}`);
-  }
-  
-  return emailSent;
-};
-
-/**
- * Send appropriate response for password reset request
- * @param {Object} res - Express response object
- * @param {string} identifierType - Type of identifier used (username or email)
- * @param {boolean} emailSent - Whether email was successfully sent
- * @returns {Object} Response object
- */
-const sendPasswordResetResponse = (res, identifierType, emailSent) => {
-  if (emailSent) {
-    return res.status(200).json({
-      status: 'success',
-      message: 'Password reset token has been sent to your email. Please check both your inbox and spam folder.',
-      emailSent,
-    });
-  } else {
-    // For security, don't reveal that the user exists if we couldn't send a message
-    return res.status(200).json({
-      status: 'success',
-      message: `If an account with that ${identifierType} exists, a password reset token has been sent to your email. Please check your inbox and spam folder.`,
-    });
-  }
-};
-
-/**
- * Reset password with token
- * @route PATCH /api/auth/resetPassword
- * @access Public
- */
-exports.resetPassword = async (req, res, next) => {
-  try {
-    const { token, password } = req.body;
     
-    console.log(`Reset password attempt with token: ${token}`);
+    // Remove used token
+    resetSessions.delete(resetToken);
     
-    // Validate input
-    if (!token || !password) {
-      console.log('Missing token or password in reset request');
-      return res.status(400).json({
-        status: 'error',
-        message: 'Please provide both token and new password',
-      });
-    }
-
-    // Find user with valid reset token
-    const user = await findUserByResetToken(token);
-
-    // If token has expired or is invalid
-    if (!user) {
-      console.log('Invalid or expired token - no matching user found');
-      return res.status(400).json({
-        status: 'error',
-        message: 'Reset token is invalid or has expired. Please request a new password reset token.',
-      });
-    }
-
-    console.log(`Valid token for user: ${user.username}`);
-
-    // Update password and clear reset token
-    await updateUserPassword(user, password);
-
-    // Log the user in, send JWT
-    createSendToken(user, 200, res);
+    res.status(200).json({
+      status: 'success',
+      message: 'Password reset successful'
+    });
   } catch (error) {
-    console.error('Reset password error:', error);
+    console.error('Error resetting password:', error);
     res.status(500).json({
       status: 'error',
-      message: error.message || 'Error resetting password',
+      message: 'An error occurred while resetting password'
     });
   }
 };
 
 /**
- * Find a user by their reset token
- * @param {string} token - Plain text reset token
- * @returns {Object|null} User document or null if not found
+ * Generate a random reset token
  */
-const findUserByResetToken = async (token) => {
-  // Hash the token from the request to compare with the stored hash
-  const hashedToken = crypto
-    .createHash('sha256')
-    .update(token)
-    .digest('hex');
-
-  console.log(`Looking for user with token hash: ${hashedToken}`);
+function generateResetToken() {
+  const tokenLength = 32;
+  const characters = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789';
+  let token = '';
   
-  // Find user with the hashed token that hasn't expired
-  const user = await User.findOne({
-    resetPasswordToken: hashedToken,
-    resetPasswordExpire: { $gt: Date.now() },
-  });
-  
-  if (user) {
-    console.log(`Found user with matching token: ${user.username || user.email}`);
-    console.log(`Token expires: ${new Date(user.resetPasswordExpire)}`);
-  } else {
-    console.log('No user found with matching token or token has expired');
+  for (let i = 0; i < tokenLength; i++) {
+    token += characters.charAt(Math.floor(Math.random() * characters.length));
   }
   
-  return user;
-};
-
-/**
- * Update user's password and clear reset token fields
- * @param {Object} user - User document from MongoDB
- * @param {string} password - New password
- * @returns {Promise} Promise representing save operation
- */
-const updateUserPassword = async (user, password) => {
-  // Set the new password and clear the reset token fields
-  user.password = password;
-  user.resetPasswordToken = undefined;
-  user.resetPasswordExpire = undefined;
-  return await user.save();
-}; 
+  return token;
+} 

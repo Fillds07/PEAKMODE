@@ -1,74 +1,75 @@
-# PEAKMODE Application
+# PEAKMODE App
 
-A mobile application for energy management and wellness tracking.
+PEAKMODE is an iOS app for energy management and wellness.
 
-## Quick Start Guide
+## Quick Setup Guide
 
-After cloning the repository, follow these simple steps:
+### First Time Setup (Do Once)
 
-### 1. First-Time Setup
-
-Run the initiate script to set up your development environment:
+Run these commands in order:
 
 ```bash
-chmod +x initiate.sh  # Make script executable
-./initiate.sh
-```
+# 1. Initialize the project (checks requirements & creates scripts)
+./init.sh
 
-This script will:
-- Install required software (Node.js, MongoDB, Expo CLI)
-- Make all scripts executable
-- Configure your environment for PEAKMODE development
-
-### 2. Install Dependencies
-
-Install all project dependencies:
-
-```bash
+# 2. Install all dependencies 
 ./install.sh
 ```
 
-### 3. Start the Application
+### Running the App (Every Time)
 
-Start the backend (in one terminal):
-
-```bash
-./start-backend.sh
-```
-
-Start the frontend (in another terminal):
+Open two terminal windows:
 
 ```bash
-./start-frontend.sh
+# Terminal 1: Start the backend server
+./run-backend.sh
+
+# Terminal 2: Start the frontend (Expo) server
+./run-frontend.sh
 ```
 
-## Additional Features
+### Database Management
 
-### Tunneling for External Access
-
-Make your backend accessible from outside your network:
+To view the contents of the SQLite database (tables and data):
 
 ```bash
-./start-backend-tunnel.sh
+# Print database contents from the root directory
+./print-db.sh
 ```
 
-This creates an ngrok tunnel that gives you a public URL to share with others.
+This prints a formatted view of all database tables and their contents to the console.
 
-### Expo Tunnel for Testing on Devices
+## What's Included
 
-Test the frontend on devices not on your local network:
+- **Backend**: Express server with SQLite database
+- **Frontend**: React Native app using Expo
+- **Authentication**: JWT-based with security question password reset
+- **Database**: Local SQLite (no external database needed)
 
-```bash
-./start-frontend.sh --tunnel
+## Project Structure
+
+```
+peakmode/
+├── backend/         # Express server with SQLite database
+├── frontend/        # React Native / Expo application
+├── init.sh          # Project initialization script
+├── install.sh       # Dependencies installation script
+├── run-backend.sh   # Backend start script
+├── run-frontend.sh  # Frontend start script
+└── print-db.sh      # Database content viewer script
 ```
 
-## Stopping Services
+## Technical Notes
 
-- Press `Ctrl+C` in each terminal to stop running services
-- To stop MongoDB: `brew services stop mongodb/brew/mongodb-community@7.0`
+- Backend runs on port 5003
+- Frontend uses Expo for iOS development
+- Password reset uses security questions instead of email
+- SQLite database is stored in `backend/data/peakmode.db`
 
 ## Troubleshooting
 
-- **MongoDB connection problems**: Try `brew services restart mongodb/brew/mongodb-community@7.0`
-- **Frontend dependency issues**: The install script uses `--legacy-peer-deps` to handle conflicts
-- **Networking issues**: Use the tunneling options mentioned above 
+If you encounter issues:
+- Check terminal output for specific error messages
+- Make sure you've completed both initialization and installation steps
+- Verify Node.js version (v14+ recommended)
+- For iOS simulator issues, ensure Xcode is installed and updated 

@@ -19,6 +19,8 @@ import { router } from 'expo-router';
 import { authService, userService } from '../services/api';
 import * as SecureStore from 'expo-secure-store';
 import { Ionicons } from '@expo/vector-icons';
+import { useAuth } from '../services/authContext';
+import { withAuth } from '../services/authContext';
 
 // PEAKMODE color theme based on logo
 const COLORS = {
@@ -34,7 +36,7 @@ const COLORS = {
   success: '#4CAF50', // Green for success
 }
 
-export default function Profile() {
+function ProfileScreen() {
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [userData, setUserData] = useState(null);
@@ -59,6 +61,11 @@ export default function Profile() {
   const [showConfirmPassword, setShowConfirmPassword] = useState(false);
   const [passwordLoading, setPasswordLoading] = useState(false);
   const [passwordError, setPasswordError] = useState('');
+
+  // Security Questions Modal
+  const [securityQuestionsVisible, setSecurityQuestionsVisible] = useState(false);
+
+  const { logout } = useAuth();
 
   // Handle refresh notifications
   const showRefreshNotification = (message) => {
@@ -394,35 +401,33 @@ export default function Profile() {
     }
   };
 
-  // Optimized logout function
+  // Add a section for security question management in the profile page
+  const renderSecurityQuestionsSection = () => {
+    return (
+      <View style={styles.section}>
+        <Text style={styles.sectionTitle}>Security Questions</Text>
+        <TouchableOpacity
+          style={styles.optionButton}
+          onPress={() => setSecurityQuestionsVisible(true)}
+        >
+          <Text style={styles.optionText}>Manage Security Questions</Text>
+          <Ionicons name="chevron-forward" size={20} color={COLORS.textSecondary} />
+        </TouchableOpacity>
+      </View>
+    );
+  };
+
+  // Modify logout function to use auth context
   const handleLogout = async () => {
     try {
-      Alert.alert(
-        'Logout',
-        'Are you sure you want to logout?',
-        [
-          {
-            text: 'Cancel',
-            style: 'cancel'
-          },
-          {
-            text: 'Logout',
-            style: 'destructive',
-            onPress: async () => {
-              // Set loading to prevent multiple taps
-              setLoading(true);
-              
-              await authService.logout();
-              router.replace('/');
-            }
-          }
-        ]
-      );
+      setLoading(true);
+      await logout();
+      // Navigation is handled by auth context
     } catch (error) {
-      console.error('Error logging out:', error);
+      console.error('Logout error:', error);
+      setError('Failed to log out. Please try again.');
+    } finally {
       setLoading(false);
-      
-      Alert.alert('Error', 'An error occurred while logging out');
     }
   };
 
@@ -586,6 +591,8 @@ export default function Profile() {
                 <Ionicons name="chevron-forward" size={24} color={COLORS.textSecondary} />
               </TouchableOpacity>
             </View>
+            
+            {renderSecurityQuestionsSection()}
           </>
         )}
       </ScrollView>
@@ -789,6 +796,9 @@ export default function Profile() {
     </SafeAreaView>
   );
 }
+
+// Wrap the component with the auth HOC
+export default withAuth(ProfileScreen);
 
 const styles = StyleSheet.create({
   safeArea: {

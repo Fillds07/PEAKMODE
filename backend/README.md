@@ -1,58 +1,78 @@
 # PEAKMODE Backend
 
-This is the backend server for the PEAKMODE application. It provides authentication and data services for the frontend.
+This is the backend server for the PEAKMODE iOS application. It provides API endpoints for authentication, user management, and other features.
 
-## Setup Instructions
+## Features
 
-1. Install dependencies
+- Local SQLite database
+- User authentication with JWT
+- Security question-based password reset
+- User profile management
+- Database inspection utilities
+
+## Setup and Installation
+
 ```bash
-cd backend
+# Install dependencies
 npm install
-```
 
-2. Create a `.env` file in the root of the backend directory with the following variables:
-```
-# Server configuration
-PORT=5000
-NODE_ENV=development
-
-# JWT configuration
-JWT_SECRET=your_jwt_secret_here_change_this_in_production
-JWT_EXPIRES_IN=90d
-
-# MongoDB configuration
-MONGODB_URI=mongodb://localhost:27017/peakmode
-# For MongoDB Atlas: mongodb+srv://<username>:<password>@cluster0.mongodb.net/peakmode
-```
-
-3. Start the development server
-```bash
+# Start the server in development mode
 npm run dev
+
+# Start the server in production mode
+npm start
 ```
 
 ## API Endpoints
 
 ### Authentication
 
-- **POST /api/auth/signup** - Register a new user
-  - Request body: `{ "fullName": "John Doe", "email": "john@example.com", "password": "password123" }`
+- `POST /api/auth/signup` - Register a new user
+- `POST /api/auth/login` - User login
+- `GET /api/auth/security-questions` - Get all security questions
+- `POST /api/auth/security-questions` - Save user security answers
 
-- **POST /api/auth/login** - Login a user
-  - Request body: `{ "email": "john@example.com", "password": "password123" }`
+### Password Reset
 
-- **POST /api/auth/forgotPassword** - Request password reset
-  - Request body: `{ "email": "john@example.com" }`
+- `POST /api/auth/find-username` - Find username by email
+- `POST /api/auth/get-security-questions` - Get user's security questions
+- `POST /api/auth/verify-security-answers` - Verify security answers
+- `POST /api/auth/reset-password` - Reset password with token
 
-- **PATCH /api/auth/resetPassword/:token** - Reset password with token
-  - Request body: `{ "password": "newpassword123" }`
+### User Profile
 
-### Health Check
+- `GET /api/users/profile` - Get current user profile
+- `PATCH /api/users/profile` - Update user profile
+- `PATCH /api/users/change-password` - Change password
+- `DELETE /api/users/profile` - Delete account
 
-- **GET /api/health** - Check API status
+### Security Questions Management
 
-## Protected Routes
+- `GET /api/users/security-questions` - Get user's security questions
+- `POST /api/users/security-questions` - Update security questions
 
-Protected routes require a valid JWT token sent in the Authorization header:
+### System Health
+
+- `GET /api/health` - Get system health status
+- `GET /api/health/db` - Get database status
+
+## Database Inspection
+
+To view the database content in a formatted way, run:
+
+```bash
+./print-db.sh
 ```
-Authorization: Bearer <your_jwt_token>
-``` 
+
+## Database Location
+
+The SQLite database file is stored in the `data` directory as `peakmode.db`.
+
+## Environment Variables
+
+The following environment variables can be set:
+
+- `PORT` - Server port (default: 5003)
+- `JWT_SECRET` - Secret key for JWT (default: peakmode-secret-key)
+- `JWT_EXPIRES_IN` - JWT expiration time (default: 7d)
+- `NODE_ENV` - Environment (development or production) 

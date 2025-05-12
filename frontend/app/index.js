@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { 
   StyleSheet, 
   View, 
@@ -11,12 +11,14 @@ import {
   KeyboardAvoidingView,
   Platform
 } from 'react-native';
-import { router } from 'expo-router';
-import { authService } from '../services/api';
+import { router, useFocusEffect } from 'expo-router';
+import { authService, AuthenticationError } from '../services/api';
 import connectivityService from '../services/connectivity';
 import { DismissKeyboardView } from '../services/keyboardUtils';
 import Logo from '../services/logoComponent';
+import { useAuth } from '../services/authContext';
 import { Ionicons } from '@expo/vector-icons';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 
 // PEAKMODE color theme based on logo
 const COLORS = {
@@ -32,20 +34,89 @@ const COLORS = {
   success: '#4CAF50', // Green for success
 }
 
+// Keys for local storage
+const ERROR_STORAGE_KEY = '@peakmode_login_error';
+const USERNAME_STORAGE_KEY = '@peakmode_username';
+const IS_NEW_SESSION_KEY = '@peakmode_is_new_session';
+const PAGE_NAVIGATION_FLAG = '@peakmode_navigation_flag';
+
 export default function Index() {
+  // State
   const [username, setUsername] = useState('');
   const [password, setPassword] = useState('');
   const [showPassword, setShowPassword] = useState(false);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
   const [checkingConnection, setCheckingConnection] = useState(true);
-  const [networkError, setNetworkError] = useState(false);
-
-  // Check connectivity when component mounts
+  const [isInitialized, setIsInitialized] = useState(false);
+  
+  // Auth context
+  const { login: authLogin } = useAuth();
+  
+  // Clear error only once when returning to this page via navigation
+  useFocusEffect(
+    React.useCallback(() => {
+      async function checkNavigation() {
+        const hasNavigated = await AsyncStorage.getItem(PAGE_NAVIGATION_FLAG);
+        
+        if (hasNavigated === 'true') {
+          // Clear error since we're returning from another page
+          setError('');
+          await AsyncStorage.removeItem(ERROR_STORAGE_KEY);
+          await AsyncStorage.setItem(PAGE_NAVIGATION_FLAG, 'false');
+        }
+      }
+      
+      checkNavigation();
+    }, [])
+  );
+  
+  // Load saved state on mount
   useEffect(() => {
-    checkConnectivity();
+    async function loadSavedState() {
+      try {
+        // Check if this is a completely new session
+        const isNewSession = await AsyncStorage.getItem(IS_NEW_SESSION_KEY);
+        
+        if (isNewSession === null) {
+          // First time app is opened - clear everything
+          console.log('New session - clearing all state');
+          await AsyncStorage.setItem(IS_NEW_SESSION_KEY, 'false');
+          await AsyncStorage.removeItem(ERROR_STORAGE_KEY);
+          await AsyncStorage.removeItem(USERNAME_STORAGE_KEY);
+        } else {
+          // Check for saved error message and username for failed login attempts
+          const savedError = await AsyncStorage.getItem(ERROR_STORAGE_KEY);
+          const savedUsername = await AsyncStorage.getItem(USERNAME_STORAGE_KEY);
+          
+          if (savedError) {
+            console.log('Restoring saved error:', savedError);
+            setError(savedError);
+          }
+          
+          if (savedUsername) {
+            console.log('Restoring saved username:', savedUsername);
+            setUsername(savedUsername);
+          }
+        }
+        
+        // Initialize connectivity
+        await checkConnectivity();
+        setIsInitialized(true);
+      } catch (err) {
+        console.error('Error loading saved state:', err);
+        setIsInitialized(true);
+      }
+    }
+    
+    loadSavedState();
+    
+    // Clean up on component unmount
+    return () => {
+      console.log('Login page unmounted');
+    };
   }, []);
-
+  
   // Function to check backend connectivity
   const checkConnectivity = async () => {
     try {
@@ -53,19 +124,28 @@ export default function Index() {
       const diagnostics = await connectivityService.runConnectivityDiagnostics();
       
       if (!diagnostics.device.isConnected) {
-        setNetworkError(true);
-        setError('No internet connection. Please check your network settings.');
+        const newError = 'No internet connection. Please check your network settings.';
+        setError(newError);
+        // Save the error
+        await AsyncStorage.setItem(ERROR_STORAGE_KEY, newError);
       } else if (!diagnostics.backend.isConnected) {
-        setNetworkError(true);
-        setError('Connection to server failed. Please try again later.');
-      } else {
-        setNetworkError(false);
+        const newError = 'Connection to server failed. Please try again later.';
+        setError(newError);
+        // Save the error
+        await AsyncStorage.setItem(ERROR_STORAGE_KEY, newError);
+      } else if (error && (error.includes('connection') || error.includes('network'))) {
+        // Only clear network-related errors
         setError('');
+        await AsyncStorage.removeItem(ERROR_STORAGE_KEY);
       }
     } catch (e) {
       console.log('Error checking connectivity:', e.message);
-      setNetworkError(true);
-      setError('Error checking server connection');
+      // Don't overwrite auth errors with connectivity errors
+      if (!error || error.includes('connection') || error.includes('network')) {
+        const newError = 'Error checking server connection';
+        setError(newError);
+        await AsyncStorage.setItem(ERROR_STORAGE_KEY, newError);
+      }
     } finally {
       setCheckingConnection(false);
     }
@@ -73,57 +153,81 @@ export default function Index() {
 
   const handleLogin = async () => {
     if (!username || !password) {
-      setError('Please enter both username and password');
+      const newError = 'Please enter both username and password';
+      setError(newError);
+      await AsyncStorage.setItem(ERROR_STORAGE_KEY, newError);
       return;
     }
 
     try {
       setLoading(true);
+      // Clear previous errors when attempting a new login
       setError('');
+      await AsyncStorage.removeItem(ERROR_STORAGE_KEY);
+      
+      // Save username in case login fails
+      await AsyncStorage.setItem(USERNAME_STORAGE_KEY, username);
       
       // First check connectivity
       const connectivityCheck = await connectivityService.checkBackendConnectivity();
       if (!connectivityCheck.isConnected) {
-        setError('Connection to server failed. Please check your network and try again.');
-        setNetworkError(true);
+        const newError = 'Connection to server failed. Please check your network and try again.';
+        setError(newError);
+        await AsyncStorage.setItem(ERROR_STORAGE_KEY, newError);
         return;
       }
       
-      // Call the login API through our service
+      // Call the login method from auth context
       try {
-        const user = await authService.login({
+        await authLogin({
           username,
           password
         });
         
-        console.log('Login successful:', user);
+        // On success, clear any saved error
+        await AsyncStorage.removeItem(ERROR_STORAGE_KEY);
         
-        // Navigate to profile
-        router.replace('/profile');
+        // Navigation is handled in the auth context after successful login
       } catch (error) {
         console.error('Login error:', error);
         
+        let newError = '';
+        
+        // Handle network errors
         if (error.message && 
             (error.message.includes('Network') || 
              error.message.includes('connect'))) {
-          setNetworkError(true);
-          setError('Network error. Please check your connection and try again.');
+          newError = 'Network error. Please check your connection and try again.';
         } else {
-          // Show the error message from the API service 
-          setError(error.message || 'Invalid username or password');
+          // Set the authentication error message
+          console.log('Setting authentication error:', error.message);
+          newError = error.message || 'Invalid username or password';
         }
+        
+        // Update state and save error for persistence
+        setError(newError);
+        await AsyncStorage.setItem(ERROR_STORAGE_KEY, newError);
       }
     } finally {
       setLoading(false);
     }
   };
 
-  // Render loading indicator during initial connectivity check
-  if (checkingConnection) {
+  // Helper function to navigate with flag
+  const navigateWithFlag = async (path) => {
+    // Set navigation flag before navigating
+    await AsyncStorage.setItem(PAGE_NAVIGATION_FLAG, 'true');
+    router.push(path);
+  };
+
+  // If we're loading saved state or checking connection
+  if (!isInitialized || checkingConnection) {
     return (
       <View style={styles.loadingContainer}>
         <ActivityIndicator size="large" color={COLORS.primary} />
-        <Text style={styles.loadingText}>Checking connection...</Text>
+        <Text style={styles.loadingText}>
+          {!isInitialized ? 'Initializing...' : 'Checking connection...'}
+        </Text>
       </View>
     );
   }
@@ -141,18 +245,24 @@ export default function Index() {
           
           <Text style={styles.loginHeader}>Login</Text>
           
-          {networkError && (
+          {/* Error message display */}
+          {error ? (
             <View style={styles.errorContainer}>
-              <Text style={styles.errorText}>{error}</Text>
-              <TouchableOpacity 
-                style={styles.retryButton}
-                onPress={checkConnectivity}
-              >
-                <Text style={styles.retryText}>Retry Connection</Text>
-              </TouchableOpacity>
+              <View style={styles.errorRow}>
+                <Ionicons name="alert-circle" size={20} color={COLORS.error} style={styles.errorIcon} />
+                <Text style={styles.errorText}>{error}</Text>
+              </View>
+              {error && (error.includes('connection') || error.includes('network')) && (
+                <TouchableOpacity 
+                  style={styles.retryButton}
+                  onPress={checkConnectivity}
+                >
+                  <Text style={styles.retryButtonText}>Retry Connection</Text>
+                </TouchableOpacity>
+              )}
             </View>
-          )}
-
+          ) : null}
+          
           <View style={styles.inputContainer}>
             <Text style={styles.label}>Username</Text>
             <View style={styles.inputWrapper}>
@@ -160,7 +270,7 @@ export default function Index() {
               <TextInput
                 style={styles.input}
                 value={username}
-                onChangeText={setUsername}
+                onChangeText={text => setUsername(text)}
                 placeholder="Enter your username"
                 autoCapitalize="none"
                 autoComplete="off"
@@ -178,7 +288,7 @@ export default function Index() {
               <TextInput
                 style={[styles.input, styles.passwordInput]}
                 value={password}
-                onChangeText={setPassword}
+                onChangeText={text => setPassword(text)}
                 placeholder="Enter your password"
                 secureTextEntry={!showPassword}
                 autoCapitalize="none"
@@ -201,12 +311,6 @@ export default function Index() {
             </View>
           </View>
 
-          {error && !networkError && (
-            <View style={styles.errorMessageContainer}>
-              <Text style={styles.errorText}>{error}</Text>
-            </View>
-          )}
-
           <TouchableOpacity
             style={styles.loginButton}
             onPress={handleLogin}
@@ -227,13 +331,13 @@ export default function Index() {
 
           <TouchableOpacity
             style={styles.createAccountButton}
-            onPress={() => router.push('/signup')}
+            onPress={() => navigateWithFlag('/signup')}
           >
             <Text style={styles.createAccountText}>Create Account</Text>
           </TouchableOpacity>
 
           <TouchableOpacity
-            onPress={() => router.push('/forgot-password')}
+            onPress={() => navigateWithFlag('/forgot-password')}
           >
             <Text style={styles.forgotPasswordText}>Forgot Password?</Text>
           </TouchableOpacity>
@@ -285,7 +389,7 @@ const styles = StyleSheet.create({
     fontSize: 24,
     fontWeight: 'bold',
     color: COLORS.text,
-    marginBottom: 24,
+    marginBottom: 10,
     textAlign: 'center',
   },
   inputContainer: {
@@ -333,35 +437,40 @@ const styles = StyleSheet.create({
     padding: 8,
   },
   errorContainer: {
-    backgroundColor: 'rgba(255, 107, 107, 0.1)',
+    backgroundColor: 'rgba(255, 107, 107, 0.15)',
     padding: 12,
     borderRadius: 8,
-    marginBottom: 20,
+    marginVertical: 16,
     borderWidth: 1,
     borderColor: COLORS.error,
+    width: '100%',
+  },
+  errorRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  errorIcon: {
+    marginRight: 6,
   },
   errorText: {
     color: COLORS.error,
     textAlign: 'center',
-    marginBottom: 8,
+    fontWeight: 'bold',
+    fontSize: 16,
   },
   retryButton: {
-    backgroundColor: '#F0F0F0',
-    padding: 10,
-    borderRadius: 5,
-    alignItems: 'center',
-  },
-  retryText: {
-    color: COLORS.primary,
-    fontWeight: '500',
-  },
-  errorMessageContainer: {
-    backgroundColor: 'rgba(255, 107, 107, 0.1)',
-    padding: 12,
-    borderRadius: 8,
-    marginBottom: 16,
+    backgroundColor: COLORS.secondary,
+    paddingVertical: 8,
+    paddingHorizontal: 16,
+    borderRadius: 4,
     borderWidth: 1,
     borderColor: COLORS.error,
+    marginTop: 10,
+  },
+  retryButtonText: {
+    color: COLORS.error,
+    fontWeight: '500',
   },
   loginButton: {
     backgroundColor: COLORS.primary,

@@ -49,7 +49,7 @@ frontend/
 
 ## Backend API Integration
 
-The app connects to the PEAKMODE backend API for data services. API configuration is in `services/api.js`.
+The app connects to the PEAKMODE backend API for data services through a SQLite database. API configuration is in `services/api.js`.
 
 ## Development Notes
 

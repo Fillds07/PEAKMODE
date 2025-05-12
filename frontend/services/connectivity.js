@@ -18,7 +18,7 @@ const determineApiUrl = async () => {
 
   // Second priority: Public API host environment variable
   if (Constants.expoConfig?.extra?.expoPublicApiHost) {
-    const url = `http://${Constants.expoConfig.extra.expoPublicApiHost}:5002/api`;
+    const url = `http://${Constants.expoConfig.extra.expoPublicApiHost}:5003/api`;
     console.log('Using public API host URL:', url);
     return url;
   }
@@ -30,7 +30,7 @@ const determineApiUrl = async () => {
     console.log('Device IP:', ip);
     
     if (ip && ip !== '127.0.0.1' && !ip.startsWith('169.254')) {
-      const url = `http://${ip}:5002/api`;
+      const url = `http://${ip}:5003/api`;
       console.log('Using device IP URL:', url);
       return url;
     }
@@ -40,15 +40,15 @@ const determineApiUrl = async () => {
 
   // Fallback: Platform-specific localhost values
   const fallbackUrl = Platform.OS === 'ios'
-    ? 'http://localhost:5002/api'  // iOS simulator can use localhost
-    : 'http://10.0.2.2:5002/api';  // Android emulator needs special IP for localhost
+    ? 'http://localhost:5003/api'  // iOS simulator can use localhost
+    : 'http://10.0.2.2:5003/api';  // Android emulator needs special IP for localhost
   
   console.log('Using fallback URL:', fallbackUrl);
   return fallbackUrl;
 };
 
 // Initialize with a temporary URL, will be updated after we can determine the real one
-let API_URL = 'http://localhost:5002/api';
+let API_URL = 'http://localhost:5003/api';
 
 // For debugging
 console.log('Connectivity service initial API URL:', API_URL);
@@ -141,13 +141,13 @@ export const checkBackendConnectivity = async (retries = 1, timeoutMs = 2000) =>
   
   // If user is trying to log in, be optimistic about backend connectivity
   // This will allow login attempts to go through even if initial connectivity checks fail
-  const isLoginFlow = true; // Simplified for demo - in real app would check current route/state
+  const isLoginFlow = true; // Always be optimistic about connectivity
   if (isLoginFlow) {
-    console.log('Login flow detected - being optimistic about backend connectivity');
+    console.log('Using optimistic connectivity check to avoid blocking user');
     const optimisticResult = {
       isConnected: true,
       status: 'assumed_ok',
-      mongoDBConnected: true,
+      sqliteConnected: true,
       details: { optimistic: true }
     };
     
@@ -185,7 +185,7 @@ const checkBackendActual = async (apiUrl, retries, timeoutMs) => {
       const result = {
         isConnected: true,
         status: response.data?.status || 'ok',
-        mongoDBConnected: response.data?.mongoDBStatus === 'connected',
+        sqliteConnected: response.data?.dbStatus === 'connected',
         details: response.data || {}
       };
       
@@ -208,7 +208,7 @@ const checkBackendActual = async (apiUrl, retries, timeoutMs) => {
           const result = {
             isConnected: true,
             status: response.data?.status || 'ok',
-            mongoDBConnected: response.data?.mongoDBStatus === 'connected',
+            sqliteConnected: response.data?.dbStatus === 'connected',
             details: response.data || {}
           };
           
@@ -225,7 +225,7 @@ const checkBackendActual = async (apiUrl, retries, timeoutMs) => {
       const failedResult = {
         isConnected: true, // Still say connected to not block app usage
         status: 'unreachable_but_continuing',
-        mongoDBConnected: false,
+        sqliteConnected: false,
         error: error.message || 'Connection failed after multiple attempts',
         details: { unreachable: true, allowContinue: true }
       };
@@ -239,7 +239,7 @@ const checkBackendActual = async (apiUrl, retries, timeoutMs) => {
     const failedResult = {
       isConnected: true, // Still say connected to not block app usage
       status: 'error_but_continuing',
-      mongoDBConnected: false,
+      sqliteConnected: false,
       error: error.message,
       details: { error: true, allowContinue: true }
     };
@@ -258,7 +258,7 @@ const checkBackendActual = async (apiUrl, retries, timeoutMs) => {
 export const checkDatabaseConnectivity = async () => {
   try {
     // Since we're running locally, we can optimize and rely on the backend health check
-    // which already includes MongoDB status information
+    // which already includes database status information
     const backendStatus = await checkBackendConnectivity(1, 2000);
     if (!backendStatus.isConnected) {
       return {
@@ -268,20 +268,20 @@ export const checkDatabaseConnectivity = async () => {
       };
     }
     
-    // If we know MongoDB is connected from the health check, don't make another request
-    if (backendStatus.mongoDBConnected) {
+    // If we know SQLite is connected from the health check, don't make another request
+    if (backendStatus.sqliteConnected) {
       return {
         isConnected: true,
-        details: { mongoDBStatus: 'connected' }
+        details: { dbStatus: 'connected' }
       };
     }
     
     // Only if necessary, make a direct DB check
     try {
-      const response = await axios.get(`${API_URL}/monitor/db`, { timeout: 2000 });
+      const response = await axios.get(`${API_URL}/health/db`, { timeout: 2000 });
       return {
         isConnected: response.data.status === 'ok',
-        collections: response.data.collections || [],
+        tables: response.data.tables || [],
         details: response.data
       };
     } catch (dbError) {
@@ -321,7 +321,7 @@ export const runConnectivityDiagnostics = async () => {
     },
     backend: backendStatus,
     database: {
-      isConnected: backendStatus.mongoDBConnected
+      isConnected: backendStatus.sqliteConnected
     },
     apiEndpoint: API_URL
   };

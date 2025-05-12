@@ -17,14 +17,14 @@ const determineApiUrl = async () => {
 
   // Second priority: Public API host environment variable
   if (Constants.expoConfig?.extra?.expoPublicApiHost) {
-    return `http://${Constants.expoConfig.extra.expoPublicApiHost}:5002/api`;
+    return `http://${Constants.expoConfig.extra.expoPublicApiHost}:5003/api`;
   }
 
   // Third priority: For development, try to detect local IP address
   try {
     const ip = await Network.getIpAddressAsync();
     if (ip && ip !== '127.0.0.1' && !ip.startsWith('169.254')) {
-      return `http://${ip}:5002/api`;
+      return `http://${ip}:5003/api`;
     }
   } catch (error) {
     console.log('Could not determine IP address:', error);
@@ -32,12 +32,12 @@ const determineApiUrl = async () => {
 
   // Fallback to platform-specific localhost values
   return Platform.OS === 'ios'
-    ? 'http://localhost:5002/api'  // iOS simulator can use localhost
-    : 'http://10.0.2.2:5002/api';  // Android emulator needs special IP for localhost
+    ? 'http://localhost:5003/api'  // iOS simulator can use localhost
+    : 'http://10.0.2.2:5003/api';  // Android emulator needs special IP for localhost
 };
 
 // Initialize with a temporary URL, will be updated after we can determine the real one
-let API_URL = 'http://localhost:5002/api';
+let API_URL = 'http://localhost:5003/api';
 
 // For debugging
 console.log('Initial API URL:', API_URL);
@@ -153,7 +153,7 @@ const clearCache = () => {
 };
 
 // Special error class for authentication errors that shouldn't trigger global error reporting
-class AuthenticationError extends Error {
+export class AuthenticationError extends Error {
   constructor(message) {
     super(message);
     this.name = 'AuthenticationError';
@@ -163,6 +163,9 @@ class AuthenticationError extends Error {
 
 // Authentication services
 export const authService = {
+  // Export API URL for other components to use
+  API_URL: API_URL,
+  
   // Register a new user
   register: async (userData) => {
     const response = await api.post('/auth/signup', userData);

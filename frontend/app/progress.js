@@ -7,6 +7,7 @@ import {
   ScrollView
 } from 'react-native';
 import Logo from '../services/logoComponent';
+import { withAuth } from '../services/authContext';
 
 // PEAKMODE color theme based on logo
 const COLORS = {
@@ -22,7 +23,7 @@ const COLORS = {
   success: '#4CAF50', // Green for success
 }
 
-export default function Progress() {
+function ProgressScreen() {
   return (
     <SafeAreaView style={styles.safeArea}>
       <ScrollView style={styles.container} contentContainerStyle={styles.contentContainer}>
@@ -61,6 +62,9 @@ export default function Progress() {
     </SafeAreaView>
   );
 }
+
+// Wrap the component with the auth HOC
+export default withAuth(ProgressScreen);
 
 const styles = StyleSheet.create({
   safeArea: {

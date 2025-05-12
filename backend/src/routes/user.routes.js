@@ -1,17 +1,16 @@
 const express = require('express');
-const router = express.Router();
 const userController = require('../controllers/user.controller');
-const { protect } = require('../middleware/auth.middleware');
+const authMiddleware = require('../middleware/auth.middleware');
+const router = express.Router();
 
-// All routes below use the protect middleware
-router.use(protect);
+// Protected routes (require authentication)
+router.get('/profile', authMiddleware, userController.getProfile);
+router.patch('/profile', authMiddleware, userController.updateProfile);
+router.patch('/change-password', authMiddleware, userController.changePassword);
+router.delete('/profile', authMiddleware, userController.deleteAccount);
 
-// User profile routes
-router.get('/profile', userController.getCurrentProfile);
-router.patch('/profile', userController.updateProfile);
-router.delete('/profile', userController.deleteAccount);
-
-// Password management
-router.patch('/change-password', userController.changePassword);
+// Security question management (protected)
+router.get('/security-questions', authMiddleware, userController.getUserSecurityQuestions);
+router.post('/security-questions', authMiddleware, userController.updateSecurityQuestions);
 
 module.exports = router; 

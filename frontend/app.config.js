@@ -11,10 +11,10 @@ const getDefaultApiUrl = () => {
   if (devServerHost) {
     // Extract just the hostname or IP from the dev server host (remove port if present)
     const host = devServerHost.split(':')[0];
-    return `http://${host}:5002/api`;
+    return `http://${host}:5003/api`;
   }
 
-  return 'http://localhost:5002/api';
+  return 'http://localhost:5003/api';
 };
 
 // Get absolute path to assets to ensure they're found correctly

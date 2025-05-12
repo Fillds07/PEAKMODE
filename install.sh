@@ -1,56 +1,75 @@
 #!/bin/bash
 
-# Colors for better visibility
-GREEN='\033[0;32m'
-YELLOW='\033[1;33m'
+# PEAKMODE Dependencies Installation Script
+
+# ANSI color codes
 RED='\033[0;31m'
+GREEN='\033[0;32m'
+YELLOW='\033[0;33m'
 BLUE='\033[0;34m'
-NC='\033[0m' # No Color
+BOLD='\033[1m'
+RESET='\033[0m'
 
-echo -e "${GREEN}=== PEAKMODE - Installing All Dependencies ===${NC}"
+echo -e "${BOLD}${BLUE}======================================${RESET}"
+echo -e "${BOLD}${BLUE}  PEAKMODE Dependencies Installation  ${RESET}"
+echo -e "${BOLD}${BLUE}======================================${RESET}"
+echo ""
 
-# Check if MongoDB is installed
-echo -e "${GREEN}=== Database Setup ===${NC}"
-if command -v mongod &> /dev/null; then
-    echo -e "${BLUE}MongoDB already installed${NC}"
-else
-    echo -e "${YELLOW}MongoDB not found. Do you want to install it? (y/n)${NC}"
-    read -r answer
-    if [[ "$answer" =~ ^[Yy]$ ]]; then
-        echo -e "${BLUE}Installing MongoDB...${NC}"
-        if command -v brew &> /dev/null; then
-            brew tap mongodb/brew
-            brew install mongodb-community@7.0
-            echo -e "${GREEN}MongoDB installed successfully!${NC}"
-        else
-            echo -e "${RED}Homebrew not found. Please install MongoDB manually:${NC}"
-            echo -e "${YELLOW}Visit: https://www.mongodb.com/docs/manual/installation/${NC}"
-        fi
-    else
-        echo -e "${YELLOW}Skipping MongoDB installation. Make sure it's installed before starting the backend.${NC}"
-    fi
+# Check if init.sh was run
+if [ ! -f "run-backend.sh" ] || [ ! -f "run-frontend.sh" ]; then
+    echo -e "${RED}Error: It looks like init.sh hasn't been run yet.${RESET}"
+    echo -e "${YELLOW}Please run ./init.sh first to initialize the project.${RESET}"
+    exit 1
 fi
 
-# Install backend dependencies
-echo -e "\n${GREEN}=== Backend Dependencies ===${NC}"
-echo -e "${BLUE}Installing backend packages...${NC}"
-cd backend
+# Root directory dependencies
+echo -e "${BOLD}Installing root dependencies...${RESET}"
 npm install
-echo -e "${GREEN}Backend dependencies installed successfully!${NC}"
+if [ $? -ne 0 ]; then
+    echo -e "${RED}Failed to install root dependencies.${RESET}"
+    exit 1
+fi
+echo -e "${GREEN}✓ Root dependencies installed${RESET}"
+echo ""
+
+# Backend dependencies
+echo -e "${BOLD}Installing backend dependencies...${RESET}"
+cd "$(dirname "$0")/backend"
+npm install
+if [ $? -ne 0 ]; then
+    echo -e "${RED}Failed to install backend dependencies.${RESET}"
+    exit 1
+fi
+echo -e "${GREEN}✓ Backend dependencies installed${RESET}"
+echo ""
+
+# Create data directory if it doesn't exist
+if [ ! -d "data" ]; then
+    mkdir -p data
+    echo -e "${GREEN}✓ Created data directory for SQLite database${RESET}"
+fi
+
+# Return to root directory
 cd ..
 
-# Install frontend dependencies
-echo -e "\n${GREEN}=== Frontend Dependencies ===${NC}"
-echo -e "${BLUE}Installing frontend packages (with legacy peer deps)...${NC}"
-cd frontend
+# Frontend dependencies
+echo -e "${BOLD}Installing frontend dependencies...${RESET}"
+cd "$(dirname "$0")/frontend"
 npm install --legacy-peer-deps
-echo -e "${GREEN}Frontend dependencies installed successfully!${NC}"
+if [ $? -ne 0 ]; then
+    echo -e "${RED}Failed to install frontend dependencies.${RESET}"
+    exit 1
+fi
+echo -e "${GREEN}✓ Frontend dependencies installed${RESET}"
+
+# Return to root directory
 cd ..
 
-echo -e "\n${GREEN}=== Installation Complete! ===${NC}"
-echo -e "${BLUE}✓ Database: MongoDB${NC}"
-echo -e "${BLUE}✓ Backend: Node.js dependencies${NC}"
-echo -e "${BLUE}✓ Frontend: React Native & Expo dependencies${NC}"
-echo -e "\n${GREEN}You can now start the application with:${NC}"
-echo -e "  ./start-backend.sh     (in one terminal)"
-echo -e "  ./start-frontend.sh    (in another terminal)" 
+echo ""
+echo -e "${BOLD}${GREEN}✓ All dependencies installed successfully!${RESET}"
+echo ""
+echo -e "${BOLD}What's next:${RESET}"
+echo -e "1. Start the backend:  ${BOLD}./run-backend.sh${RESET} (in one terminal)"
+echo -e "2. Start the frontend: ${BOLD}./run-frontend.sh${RESET} (in another terminal)"
+echo -e "3. View database:      ${BOLD}./print-db.sh${RESET} (to inspect database contents)"
+echo "" 

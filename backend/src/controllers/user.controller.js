@@ -1,209 +1,271 @@
-/**
- * User Controller
- * 
- * Handles user profile operations including:
- * - Retrieving user profile
- * - Updating user profile
- * - Changing password
- * - Uploading avatar
- */
-const User = require('../models/User');
-const bcrypt = require('bcryptjs');
+const bcrypt = require('bcrypt');
+const { runQuery, getOne, getAll } = require('../models/database');
 
 /**
- * Get current user profile
- * @route GET /api/users/profile
- * @access Private
+ * Get user profile
  */
-exports.getCurrentProfile = async (req, res) => {
+exports.getProfile = async (req, res) => {
   try {
-    // User is already available from auth middleware
+    // User is already attached to request by auth middleware
     const user = req.user;
     
-    if (!user) {
-      return res.status(404).json({
-        status: 'error',
-        message: 'User not found'
-      });
-    }
-
+    // Get user's security question IDs (not answers)
+    const securityQuestions = await getAll(`
+      SELECT question_id FROM user_security_answers
+      WHERE user_id = ?
+    `, [user.id]);
+    
+    const hasSecurityQuestions = securityQuestions.length > 0;
+    
     res.status(200).json({
       status: 'success',
       data: {
-        user
+        user: {
+          ...user,
+          hasSecurityQuestions
+        }
       }
     });
   } catch (error) {
-    console.error('Error getting user profile:', error);
+    console.error('Error getting profile:', error);
     res.status(500).json({
       status: 'error',
-      message: error.message || 'Error retrieving user profile'
+      message: 'An error occurred while fetching profile'
     });
   }
 };
 
 /**
  * Update user profile
- * @route PATCH /api/users/profile
- * @access Private
  */
 exports.updateProfile = async (req, res) => {
   try {
-    const { name, email, phone, avatar } = req.body;
     const userId = req.user.id;
-
-    // Filter out undefined fields
-    const updateData = {};
-    if (name) updateData.name = name;
-    if (email) updateData.email = email;
-    if (phone) updateData.phone = phone;
-    if (avatar) updateData.avatar = avatar;
-
-    // Prevent updating sensitive fields like password or role
-    const updatedUser = await User.findByIdAndUpdate(
-      userId,
-      updateData,
-      { 
-        new: true, // Return updated user
-        runValidators: true // Run model validators
-      }
-    );
-
-    if (!updatedUser) {
-      return res.status(404).json({
+    const { name, email } = req.body;
+    
+    // Basic validation
+    if (!name && !email) {
+      return res.status(400).json({
         status: 'error',
-        message: 'User not found'
+        message: 'At least one field (name or email) is required'
       });
     }
-
+    
+    // Check if email is already in use (by another user)
+    if (email) {
+      const existingUser = await getOne(
+        'SELECT id FROM users WHERE email = ? AND id != ?',
+        [email, userId]
+      );
+      
+      if (existingUser) {
+        return res.status(400).json({
+          status: 'error',
+          message: 'Email is already registered'
+        });
+      }
+    }
+    
+    // Prepare update query based on provided fields
+    let updateQuery = 'UPDATE users SET updated_at = CURRENT_TIMESTAMP';
+    const params = [];
+    
+    if (name) {
+      updateQuery += ', name = ?';
+      params.push(name);
+    }
+    
+    if (email) {
+      updateQuery += ', email = ?';
+      params.push(email);
+    }
+    
+    updateQuery += ' WHERE id = ?';
+    params.push(userId);
+    
+    // Update user
+    await runQuery(updateQuery, params);
+    
+    // Get updated user
+    const updatedUser = await getOne(
+      'SELECT id, username, email, name FROM users WHERE id = ?',
+      [userId]
+    );
+    
     res.status(200).json({
       status: 'success',
+      message: 'Profile updated successfully',
       data: {
         user: updatedUser
       }
     });
   } catch (error) {
-    console.error('Error updating user profile:', error);
-    
-    // Handle validation errors
-    if (error.name === 'ValidationError') {
-      const errors = Object.values(error.errors).map(err => err.message);
-      return res.status(400).json({
-        status: 'error',
-        message: 'Validation failed',
-        errors
-      });
-    }
-    
-    // Handle duplicate key errors (like email already in use)
-    if (error.code === 11000) {
-      const field = Object.keys(error.keyPattern)[0];
-      return res.status(400).json({
-        status: 'error',
-        message: `${field.charAt(0).toUpperCase() + field.slice(1)} is already in use`
-      });
-    }
-    
+    console.error('Error updating profile:', error);
     res.status(500).json({
       status: 'error',
-      message: error.message || 'Error updating user profile'
+      message: 'An error occurred while updating profile'
     });
   }
 };
 
 /**
- * Change user password
- * @route PATCH /api/users/change-password
- * @access Private
+ * Change password
  */
 exports.changePassword = async (req, res) => {
   try {
-    const { currentPassword, newPassword } = req.body;
     const userId = req.user.id;
-
-    // Check if passwords are provided
+    const { currentPassword, newPassword } = req.body;
+    
+    // Basic validation
     if (!currentPassword || !newPassword) {
       return res.status(400).json({
         status: 'error',
-        message: 'Please provide current password and new password'
+        message: 'Current password and new password are required'
       });
     }
-
+    
     // Get user with password
-    const user = await User.findById(userId).select('+password');
-
-    if (!user) {
-      return res.status(404).json({
-        status: 'error',
-        message: 'User not found'
-      });
-    }
-
-    // Check if current password is correct
-    const isMatch = await user.matchPassword(currentPassword);
+    const user = await getOne(
+      'SELECT password FROM users WHERE id = ?',
+      [userId]
+    );
+    
+    // Verify current password
+    const isMatch = await bcrypt.compare(currentPassword, user.password);
     if (!isMatch) {
       return res.status(401).json({
         status: 'error',
         message: 'Current password is incorrect'
       });
     }
-
-    // Update the password
-    user.password = newPassword;
-    await user.save();
-
+    
+    // Hash new password
+    const salt = await bcrypt.genSalt(10);
+    const hashedPassword = await bcrypt.hash(newPassword, salt);
+    
+    // Update password
+    await runQuery(
+      'UPDATE users SET password = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?',
+      [hashedPassword, userId]
+    );
+    
     res.status(200).json({
       status: 'success',
-      message: 'Password updated successfully'
+      message: 'Password changed successfully'
     });
   } catch (error) {
     console.error('Error changing password:', error);
-    
-    // Handle validation errors
-    if (error.name === 'ValidationError') {
-      const errors = Object.values(error.errors).map(err => err.message);
-      return res.status(400).json({
-        status: 'error',
-        message: 'Validation failed',
-        errors
-      });
-    }
-    
     res.status(500).json({
       status: 'error',
-      message: error.message || 'Error changing password'
+      message: 'An error occurred while changing password'
     });
   }
 };
 
 /**
  * Delete user account
- * @route DELETE /api/users/profile
- * @access Private
  */
 exports.deleteAccount = async (req, res) => {
   try {
     const userId = req.user.id;
     
-    // Simply delete the user
-    const deletedUser = await User.findByIdAndDelete(userId);
-    
-    if (!deletedUser) {
-      return res.status(404).json({
-        status: 'error',
-        message: 'User not found'
-      });
-    }
+    // Delete user (cascade will delete security answers)
+    await runQuery('DELETE FROM users WHERE id = ?', [userId]);
     
     res.status(200).json({
       status: 'success',
-      message: 'Account successfully deleted'
+      message: 'Account deleted successfully'
     });
   } catch (error) {
-    console.error('Error deleting user account:', error);
+    console.error('Error deleting account:', error);
     res.status(500).json({
       status: 'error',
-      message: error.message || 'Error deleting user account'
+      message: 'An error occurred while deleting account'
+    });
+  }
+};
+
+/**
+ * Get user's security questions
+ */
+exports.getUserSecurityQuestions = async (req, res) => {
+  try {
+    const userId = req.user.id;
+    
+    // Get questions with question text but not answers
+    const questions = await getAll(`
+      SELECT sq.id, sq.question
+      FROM security_questions sq
+      JOIN user_security_answers usa ON sq.id = usa.question_id
+      WHERE usa.user_id = ?
+    `, [userId]);
+    
+    res.status(200).json({
+      status: 'success',
+      data: {
+        questions
+      }
+    });
+  } catch (error) {
+    console.error('Error getting security questions:', error);
+    res.status(500).json({
+      status: 'error',
+      message: 'An error occurred while fetching security questions'
+    });
+  }
+};
+
+/**
+ * Update security questions
+ */
+exports.updateSecurityQuestions = async (req, res) => {
+  try {
+    const userId = req.user.id;
+    const { answers } = req.body;
+    
+    // Basic validation
+    if (!answers || !Array.isArray(answers) || answers.length < 3) {
+      return res.status(400).json({
+        status: 'error',
+        message: 'At least 3 security answers are required'
+      });
+    }
+    
+    // Begin transaction
+    await runQuery('BEGIN TRANSACTION');
+    
+    try {
+      // Delete existing answers
+      await runQuery('DELETE FROM user_security_answers WHERE user_id = ?', [userId]);
+      
+      // Insert new answers
+      for (const answer of answers) {
+        // Hash the answer for security
+        const hashedAnswer = await bcrypt.hash(answer.answer.toLowerCase(), 10);
+        
+        await runQuery(
+          'INSERT INTO user_security_answers (user_id, question_id, answer) VALUES (?, ?, ?)',
+          [userId, answer.questionId, hashedAnswer]
+        );
+      }
+      
+      // Commit transaction
+      await runQuery('COMMIT');
+      
+      res.status(200).json({
+        status: 'success',
+        message: 'Security questions updated successfully'
+      });
+    } catch (error) {
+      // Rollback transaction on error
+      await runQuery('ROLLBACK');
+      throw error;
+    }
+  } catch (error) {
+    console.error('Error updating security questions:', error);
+    res.status(500).json({
+      status: 'error',
+      message: 'An error occurred while updating security questions'
     });
   }
 }; 

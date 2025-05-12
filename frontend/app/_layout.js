@@ -1,10 +1,11 @@
-import React, { useEffect } from 'react';
-import { Tabs } from 'expo-router';
+import React, { useEffect, useState } from 'react';
+import { Tabs, Slot, Stack, router } from 'expo-router';
 import { useFonts } from 'expo-font';
 import { SplashScreen } from 'expo-router';
 import { StatusBar } from 'expo-status-bar';
-import { LogBox } from 'react-native';
+import { LogBox, View, ActivityIndicator } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
+import { AuthProvider, useAuth } from '../services/authContext';
 
 // PEAKMODE color theme based on logo
 const COLORS = {
@@ -54,7 +55,17 @@ LogBox.ignoreLogs([
 // Prevent the splash screen from auto-hiding before asset loading is complete
 SplashScreen.preventAutoHideAsync();
 
-export default function RootLayout() {
+// Main layout component that uses authentication context
+function MainLayout() {
+  const { isAuthenticated, loading } = useAuth();
+  
+  useEffect(() => {
+    // When auth state changes, navigate to index if not logged in
+    if (!loading && !isAuthenticated) {
+      router.replace('/');
+    }
+  }, [isAuthenticated, loading]);
+
   const [fontsLoaded, fontError] = useFonts({
     // Add any custom fonts here if needed
   });
@@ -71,7 +82,32 @@ export default function RootLayout() {
     return null;
   }
 
-  // Show the app once everything is loaded
+  // Loading state for auth
+  if (loading) {
+    return (
+      <View style={{ flex: 1, justifyContent: 'center', alignItems: 'center', backgroundColor: COLORS.background }}>
+        <ActivityIndicator size="large" color={COLORS.primary} />
+      </View>
+    );
+  }
+
+  // For non-authenticated routes, use a simple stack navigator (no tabs)
+  if (!isAuthenticated) {
+    return (
+      <>
+        <StatusBar style="dark" />
+        <Stack screenOptions={{ headerShown: false }}>
+          <Stack.Screen name="index" />
+          <Stack.Screen name="signup" />
+          <Stack.Screen name="security-questions" />
+          <Stack.Screen name="forgot-password" />
+          <Stack.Screen name="reset-password" />
+        </Stack>
+      </>
+    );
+  }
+
+  // For authenticated users, show the tab bar
   return (
     <>
       <StatusBar style="dark" />
@@ -133,7 +169,7 @@ export default function RootLayout() {
             ),
           }}
         />
-        {/* Hide auth screens from the tab bar */}
+        {/* Hide auth screens and make them inaccessible in authenticated state */}
         <Tabs.Screen
           name="index"
           options={{
@@ -142,6 +178,12 @@ export default function RootLayout() {
         />
         <Tabs.Screen
           name="signup"
+          options={{
+            href: null,
+          }}
+        />
+        <Tabs.Screen
+          name="security-questions"
           options={{
             href: null,
           }}
@@ -160,5 +202,14 @@ export default function RootLayout() {
         />
       </Tabs>
     </>
+  );
+}
+
+// Root layout that provides the authentication context
+export default function RootLayout() {
+  return (
+    <AuthProvider>
+      <MainLayout />
+    </AuthProvider>
   );
 } 

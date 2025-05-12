@@ -8,6 +8,7 @@ import {
   Image
 } from 'react-native';
 import Logo from '../services/logoComponent';
+import { withAuth } from '../services/authContext';
 
 // PEAKMODE color theme based on logo
 const COLORS = {
@@ -23,7 +24,7 @@ const COLORS = {
   success: '#4CAF50', // Green for success
 }
 
-export default function Supplements() {
+function SupplementsScreen() {
   return (
     <SafeAreaView style={styles.safeArea}>
       <ScrollView style={styles.container} contentContainerStyle={styles.contentContainer}>
@@ -62,6 +63,9 @@ export default function Supplements() {
     </SafeAreaView>
   );
 }
+
+// Wrap the component with the auth HOC
+export default withAuth(SupplementsScreen);
 
 const styles = StyleSheet.create({
   safeArea: {
