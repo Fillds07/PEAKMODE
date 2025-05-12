@@ -6,20 +6,21 @@ import {
   TextInput, 
   TouchableOpacity,
   ActivityIndicator,
-  ScrollView,
+  Alert,
   KeyboardAvoidingView,
   Platform,
-  Alert,
-  TouchableWithoutFeedback,
-  Keyboard
+  Animated,
+  Easing,
+  ScrollView
 } from 'react-native';
-import { SafeAreaView } from 'react-native-safe-area-context';
 import { router } from 'expo-router';
 import { authService } from '../services/api';
 import connectivityService from '../services/connectivity';
 import { DismissKeyboardView } from '../services/keyboardUtils';
 import { Ionicons } from '@expo/vector-icons';
 import Logo from '../services/logoComponent';
+import StandardError from '../services/ErrorDisplay';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 
 // PEAKMODE color theme based on logo
 const COLORS = {
@@ -35,280 +36,205 @@ const COLORS = {
   success: '#4CAF50', // Green for success
 }
 
-// Token expiration time in minutes
-const TOKEN_EXPIRATION_MINUTES = 10;
-
 export default function ForgotPasswordScreen() {
-  // Step 1: Request reset token with identifier (username or email)
-  const [identifier, setIdentifier] = useState('');
-  const [identifierType, setIdentifierType] = useState('email'); // 'email' or 'username'
+  // Multi-step state
+  const [currentStep, setCurrentStep] = useState(1); // 1: Username, 2: Security Questions, 3: Reset Password
   
-  // Step 2: Enter token received via email
+  // Step 1: Username
+  const [username, setUsername] = useState('');
+  
+  // Step 2: Security Questions
+  const [securityQuestions, setSecurityQuestions] = useState([]);
+  const [securityAnswers, setSecurityAnswers] = useState({});
+  
+  // Step 3: New Password
   const [resetToken, setResetToken] = useState('');
-  const [tokenRequestTime, setTokenRequestTime] = useState(null);
-  const [remainingTime, setRemainingTime] = useState(TOKEN_EXPIRATION_MINUTES * 60);
-  const timerRef = useRef(null);
-  const [resendLoading, setResendLoading] = useState(false);
-  
-  // Step 3: Enter new password
   const [newPassword, setNewPassword] = useState('');
   const [confirmPassword, setConfirmPassword] = useState('');
-  const [showNewPassword, setShowNewPassword] = useState(false);
-  const [showConfirmPassword, setShowConfirmPassword] = useState(false);
+  const [showPassword, setShowPassword] = useState(false);
   
   // General state
-  const [currentStep, setCurrentStep] = useState(1); // 1, 2, or 3
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
   const [isConnecting, setIsConnecting] = useState(true);
-  const [networkError, setNetworkError] = useState(false);
   const [successMessage, setSuccessMessage] = useState('');
-  const [showRequestNewToken, setShowRequestNewToken] = useState(false);
-
+  
+  // Animation
+  const fadeAnim = useRef(new Animated.Value(0)).current;
+  const slideAnim = useRef(new Animated.Value(20)).current;
+  
   // Check connectivity when component mounts
   useEffect(() => {
     checkConnectivity();
   }, []);
-
-  // Timer for token expiration
+  
+  // Start animations when component mounts
   useEffect(() => {
-    if (currentStep === 2 && tokenRequestTime) {
-      // Clear any existing timer
-      if (timerRef.current) {
-        clearInterval(timerRef.current);
-      }
-      
-      // Calculate initial remaining time
-      const elapsedSeconds = Math.floor((Date.now() - tokenRequestTime) / 1000);
-      const initialRemainingTime = Math.max(0, TOKEN_EXPIRATION_MINUTES * 60 - elapsedSeconds);
-      setRemainingTime(initialRemainingTime);
-      
-      // Set up the countdown timer
-      timerRef.current = setInterval(() => {
-        setRemainingTime(prev => {
-          const newTime = prev - 1;
-          if (newTime <= 0) {
-            clearInterval(timerRef.current);
-            return 0;
-          }
-          return newTime;
-        });
-      }, 1000);
-      
-      // Clean up timer on unmount or when changing steps
-      return () => {
-        if (timerRef.current) {
-          clearInterval(timerRef.current);
-        }
-      };
+    if (!isConnecting) {
+      Animated.parallel([
+        Animated.timing(fadeAnim, {
+          toValue: 1,
+          duration: 300,
+          useNativeDriver: true,
+          easing: Easing.out(Easing.cubic),
+        }),
+        Animated.timing(slideAnim, {
+          toValue: 0,
+          duration: 300,
+          useNativeDriver: true,
+          easing: Easing.out(Easing.cubic),
+        })
+      ]).start();
     }
-  }, [currentStep, tokenRequestTime]);
-
+  }, [isConnecting, currentStep]);
+  
   // Function to check backend connectivity
   const checkConnectivity = async () => {
     try {
-      setIsConnecting(true);
-      const diagnostics = await connectivityService.runConnectivityDiagnostics();
-      
-      if (!diagnostics.device.isConnected) {
-        setNetworkError(true);
-        setError('No internet connection. Please check your network settings.');
-      } else if (!diagnostics.backend.isConnected) {
-        setNetworkError(true);
-        setError('Connection to server failed. Please try again later.');
-      } else if (!diagnostics.database.isConnected) {
-        setNetworkError(true);
-        setError('Backend database connection issue detected.');
-      } else {
-        setNetworkError(false);
-        setError('');
-      }
-    } catch (e) {
-      console.log('Error checking connectivity:', e.message);
-      setNetworkError(true);
-      setError('Error checking server connection');
-    } finally {
+      const connectivityStatus = await connectivityService.checkBackendConnectivity();
       setIsConnecting(false);
+      
+      if (!connectivityStatus.isConnected) {
+        setError('Cannot connect to server. Please check your network connection.');
+      }
+    } catch (error) {
+      setIsConnecting(false);
+      setError('Cannot connect to server. Please check your network connection.');
     }
   };
-
-  const validateEmail = (email) => {
-    const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
-    return emailRegex.test(email);
-  };
-
-  const validatePassword = (password) => {
-    const minLength = 8;
-    const maxLength = 20;
-    const hasUppercase = /[A-Z]/.test(password);
-    const hasLowercase = /[a-z]/.test(password);
-    const hasNumber = /[0-9]/.test(password);
-    const hasSpecialChar = /[!@#$%^&*()_+\-=\[\]{};':"\\|,.<>\/?]+/.test(password);
-    
-    return {
-      isValid: 
-        password.length >= minLength &&
-        password.length <= maxLength &&
-        hasUppercase &&
-        hasLowercase &&
-        hasNumber &&
-        hasSpecialChar,
-      minLength: password.length >= minLength,
-      maxLength: password.length <= maxLength,
-      hasUppercase,
-      hasLowercase,
-      hasNumber,
-      hasSpecialChar
-    };
-  };
-
-  const handleRequestResetToken = async () => {
-    // Reset messages
+  
+  // Handle username submission
+  const handleUsernameSubmit = async () => {
+    // Reset states
     setError('');
     setSuccessMessage('');
     
-    // Validate input
-    if (!identifier) {
-      setError(`Please enter your ${identifierType}`);
+    // Validate username
+    if (!username) {
+      setError('Please enter your username');
       return;
     }
-
-    // Validate email format if using email
-    if (identifierType === 'email' && !validateEmail(identifier)) {
-      setError('Please enter a valid email address');
-      return;
-    }
-
+    
     try {
       setLoading(true);
       
-      // First check connectivity
+      // Check connectivity first
       const connectivityCheck = await connectivityService.checkBackendConnectivity();
       if (!connectivityCheck.isConnected) {
         setError('Connection to server failed. Please check your network and try again.');
-        setNetworkError(true);
         return;
       }
       
-      // Call the forgot password API through our service
-      try {
-        // Create payload based on identifier type
-        const payload = identifierType === 'email' 
-          ? { email: identifier } 
-          : { username: identifier };
-          
-        await authService.forgotPassword(payload);
-        
-        // Set token request time for expiration tracking
-        setTokenRequestTime(Date.now());
-        
-        // Move to next step
-        setCurrentStep(2);
-        setSuccessMessage(`A reset token has been sent to the email associated with this ${identifierType}`);
-      } catch (error) {
-        console.error('Forgot password error:', error);
-        
-        if (error.message && (error.message.includes('Network') || error.message.includes('connect'))) {
-          setNetworkError(true);
-          setError('Network error. Please check your connection and try again.');
-        } else {
-          // For security reasons, we don't want to reveal if an identifier exists or not
-          setTokenRequestTime(Date.now());
-          setCurrentStep(2);
-          setSuccessMessage(`If an account with this ${identifierType} exists, a reset token has been sent to your email`);
-        }
+      // Get security questions for the username
+      const response = await authService.getUserSecurityQuestions(username);
+      
+      // Log response for debugging
+      console.log('Security questions response:', JSON.stringify(response));
+      
+      if (response?.error) {
+        setError(response.data.message || 'Username not found or no security questions set');
+        return;
       }
+      
+      // The correct path is response.data.data.questions
+      if (response?.data?.data?.questions && response.data.data.questions.length > 0) {
+        setSecurityQuestions(response.data.data.questions);
+        
+        // Initialize security answers state
+        const initialAnswers = {};
+        response.data.data.questions.forEach(q => {
+          initialAnswers[q.id] = '';
+        });
+        setSecurityAnswers(initialAnswers);
+        
+        // Move to security questions step
+        setCurrentStep(2);
+        setSuccessMessage('');
+      } else {
+        setError('No security questions found for this username');
+      }
+    } catch (error) {
+      // Don't use console.error
+      setError('An unexpected error occurred. Please try again.');
     } finally {
       setLoading(false);
     }
   };
-
-  const handleResendToken = async () => {
-    // Reset messages
+  
+  // Handle security answer changes
+  const handleAnswerChange = (questionId, answer) => {
+    setSecurityAnswers(prev => ({
+      ...prev,
+      [questionId]: answer
+    }));
+  };
+  
+  // Handle security answers submission
+  const handleSecurityAnswersSubmit = async () => {
+    // Reset states
     setError('');
-    setSuccessMessage('');
-    setResendLoading(true);
+    
+    // Validate all questions are answered
+    const unansweredQuestions = securityQuestions.filter(q => 
+      !securityAnswers[q.id] || securityAnswers[q.id].trim() === ''
+    );
+    
+    if (unansweredQuestions.length > 0) {
+      setError('Please answer all security questions');
+      return;
+    }
     
     try {
-      // First check connectivity
-      const connectivityCheck = await connectivityService.checkBackendConnectivity();
-      if (!connectivityCheck.isConnected) {
-        setError('Connection to server failed. Please check your network and try again.');
-        setNetworkError(true);
+      setLoading(true);
+      console.log('Verifying security answers for username:', username);
+      
+      // Format security answers for API
+      const formattedAnswers = securityQuestions.map(q => ({
+        questionId: q.id,
+        answer: securityAnswers[q.id]
+      }));
+      
+      // Verify security answers
+      const response = await authService.verifySecurityAnswers({
+        username,
+        answers: formattedAnswers
+      });
+      
+      // Log response for debugging
+      console.log('Verify answers response:', JSON.stringify(response));
+      
+      if (response?.error) {
+        setError(response.data.message || 'Failed to verify security answers');
         return;
       }
       
-      // Call the forgot password API through our service
-      try {
-        // Create payload based on identifier type
-        const payload = identifierType === 'email' 
-          ? { email: identifier } 
-          : { username: identifier };
-          
-        await authService.forgotPassword(payload);
-        
-        // Set token request time for expiration tracking
-        setTokenRequestTime(Date.now());
-        
-        // Reset the token field
-        setResetToken('');
-        
-        // Reset the timer (the useEffect will handle this due to tokenRequestTime change)
-        // This ensures a full 10 minutes for the new token
-        
-        // Update success message
-        setSuccessMessage(`A new reset token has been sent to your email`);
-        
-        // Show brief feedback toast or alert
-        Alert.alert(
-          "Token Resent",
-          "A new reset token has been sent to your email. Please check your inbox and spam folder."
-        );
-      } catch (error) {
-        console.error('Resend token error:', error);
-        
-        if (error.message && (error.message.includes('Network') || error.message.includes('connect'))) {
-          setNetworkError(true);
-          setError('Network error. Please check your connection and try again.');
-        } else {
-          // For security reasons, we don't want to reveal if an identifier exists or not
-          setTokenRequestTime(Date.now());
-          setSuccessMessage(`If an account with this ${identifierType} exists, a new reset token has been sent to your email`);
-          
-          // Still provide feedback
-          Alert.alert(
-            "Token Resent",
-            "If an account with this identifier exists, a new reset token has been sent to the associated email."
-          );
-        }
+      // Store username for the final password reset step
+      console.log('Username for password reset:', username);
+      
+      // The correct path is response.data.data.resetToken
+      if (response?.data?.data?.resetToken) {
+        // Store the reset token and move to reset password step
+        setResetToken(response.data.data.resetToken);
+        setCurrentStep(3);
+        setSuccessMessage('Security answers verified');
+      } else {
+        setError('Failed to verify security answers');
       }
+    } catch (error) {
+      // Don't use console.error
+      console.log('Error verifying security answers:', error);
+      setError('An unexpected error occurred. Please try again.');
     } finally {
-      setResendLoading(false);
+      setLoading(false);
     }
   };
-
-  const handleVerifyToken = () => {
-    // Reset error message
-    setError('');
-    
-    // Validate token
-    if (!resetToken) {
-      setError('Please enter the reset token received in your email');
-      return;
-    }
-    
-    if (resetToken.length < 6) {
-      setError('Please enter the complete token received in your email');
-      return;
-    }
-    
-    // Move to password reset step
-    setCurrentStep(3);
-  };
-
+  
+  // Handle password reset
   const handleResetPassword = async () => {
-    // Reset error message
+    // Reset error and clear any verification success message
     setError('');
+    setSuccessMessage('');
+    console.log('Reset Password button clicked for username:', username);
     
     // Validate passwords
     if (!newPassword || !confirmPassword) {
@@ -321,18 +247,11 @@ export default function ForgotPasswordScreen() {
       return;
     }
     
-    // Validate token
-    if (!resetToken || resetToken.trim() === '') {
-      setError('Invalid reset token. Please request a new one.');
-      setShowRequestNewToken(true);
-      return;
-    }
-    
+    // Validate password strength
     const passwordValidation = validatePassword(newPassword);
     if (!passwordValidation.isValid) {
       let errorMsg = 'Password must:';
       if (!passwordValidation.minLength) errorMsg += ' be at least 8 characters long,';
-      if (!passwordValidation.maxLength) errorMsg += ' be at most 20 characters long,';
       if (!passwordValidation.hasUppercase) errorMsg += ' include uppercase letters,';
       if (!passwordValidation.hasLowercase) errorMsg += ' include lowercase letters,';
       if (!passwordValidation.hasNumber) errorMsg += ' include numbers,';
@@ -347,94 +266,94 @@ export default function ForgotPasswordScreen() {
     
     try {
       setLoading(true);
-      setSuccessMessage('');
       
-      // First check connectivity
-      const connectivityCheck = await connectivityService.checkBackendConnectivity();
-      if (!connectivityCheck.isConnected) {
-        setError('Connection to server failed. Please check your network and try again.');
-        setNetworkError(true);
+      console.log('Calling resetPasswordWithToken API for username:', username);
+      console.log('New password length:', newPassword.length);
+      
+      // Reset password using username and verified security answers (no token needed)
+      const response = await authService.resetPasswordWithToken(username, newPassword);
+      
+      // Log response for debugging
+      console.log('Reset password API response:', JSON.stringify(response));
+      
+      if (response?.error) {
+        console.log('Reset password API returned error:', response.error);
+        setError(response.data.message || 'Failed to reset password');
         return;
       }
       
+      // Set a new success message for the password reset itself
+      setSuccessMessage('Password reset successful!');
+      console.log('Password reset successful, will redirect to login page shortly...');
+      
+      // Store success flag in AsyncStorage and then redirect after a brief delay
       try {
-        console.log('Attempting password reset with token:', resetToken.trim());
-        
-        // Send token verification and new password to the API
-        // Make sure to trim the token to remove any whitespace
-        await authService.resetPassword(resetToken.trim(), newPassword);
-        
-        // Show success message and redirect to login
-        setSuccessMessage('Your password has been successfully reset!');
-        setTimeout(() => {
-          router.replace('/');
-        }, 2000);
-      } catch (error) {
-        console.error('Password reset error:', error);
-        
-        if (error.message && (error.message.includes('Network') || error.message.includes('connect'))) {
-          setNetworkError(true);
-          setError('Network error. Please check your connection and try again.');
-        } else if (error.response && error.response.status === 400) {
-          // This is likely a token expiration or invalid token error
-          setError('The reset token has expired or is invalid. Please request a new one.');
-          setShowRequestNewToken(true);
-        } else {
-          setError(error.message || 'Failed to reset password. The token may have expired.');
-          setShowRequestNewToken(true);
-        }
+        // Set a timestamp to avoid caching issues
+        const timestamp = new Date().getTime();
+        await AsyncStorage.setItem('password_reset_success', 'true');
+        await AsyncStorage.setItem('password_reset_timestamp', timestamp.toString());
+        console.log('Stored password reset success with timestamp:', timestamp);
+      } catch (storageError) {
+        console.log('Failed to store success flag:', storageError);
       }
+      
+      // Give a brief delay to show the success message before redirecting
+      setTimeout(() => {
+        console.log('Now redirecting to login page...');
+        router.replace('/');
+      }, 1500);
+      
+    } catch (error) {
+      // Don't use console.error
+      console.log('Caught error during password reset:', error);
+      setError('An unexpected error occurred. Please try again.');
     } finally {
       setLoading(false);
     }
   };
-
+  
+  // Handle back button
   const handleGoBack = () => {
-    if (currentStep === 3) {
-      // From step 3 (create new password) to step 2 (enter token)
-      setCurrentStep(2);
-      setError('');
-    } else if (currentStep === 2) {
-      // From step 2 (enter token) to step 1 (request token)
-      // Ask for confirmation since this will invalidate their current token entry
-      if (resetToken.trim().length > 0) {
-        Alert.alert(
-          "Go Back?",
-          "Going back will clear your entered token. Continue?",
-          [
-            {
-              text: "Cancel",
-              style: "cancel"
-            },
-            { 
-              text: "Go Back", 
-              onPress: () => {
-                setCurrentStep(1);
-                setResetToken('');
-                setError('');
-              }
-            }
-          ]
-        );
-      } else {
-        // No token entered, go back without confirmation
-        setCurrentStep(1);
-        setError('');
-      }
-    } else {
-      // From step 1 to login screen
+    if (currentStep === 1) {
+      // From username back to login
       router.back();
+    } else if (currentStep === 2) {
+      // From security questions back to username
+      setCurrentStep(1);
+      setSecurityQuestions([]);
+      setSecurityAnswers({});
+      setError('');
+    } else if (currentStep === 3) {
+      // From reset password back to security questions
+      setCurrentStep(2);
+      setNewPassword('');
+      setConfirmPassword('');
+      setError('');
     }
   };
-
-  // Format remaining time as MM:SS
-  const formatTime = (totalSeconds) => {
-    const minutes = Math.floor(totalSeconds / 60);
-    const seconds = totalSeconds % 60;
-    return `${minutes.toString().padStart(2, '0')}:${seconds.toString().padStart(2, '0')}`;
+  
+  // Validate password
+  const validatePassword = (password) => {
+    const validation = {
+      minLength: password.length >= 8,
+      hasUppercase: /[A-Z]/.test(password),
+      hasLowercase: /[a-z]/.test(password),
+      hasNumber: /[0-9]/.test(password),
+      hasSpecialChar: /[^A-Za-z0-9]/.test(password),
+    };
+    
+    validation.isValid = (
+      validation.minLength &&
+      validation.hasUppercase &&
+      validation.hasLowercase &&
+      validation.hasNumber &&
+      validation.hasSpecialChar
+    );
+    
+    return validation;
   };
-
-  // Render loading indicator during initial connectivity check
+  
+  // Show loading indicator during initial connectivity check
   if (isConnecting) {
     return (
       <View style={styles.loadingContainer}>
@@ -443,325 +362,254 @@ export default function ForgotPasswordScreen() {
       </View>
     );
   }
-
-  const renderStepOne = () => (
-    <>
-      <Text style={styles.stepTitle}>Reset Password</Text>
-      <Text style={styles.stepDescription}>
-        Enter your email or username and we'll send you a token to reset your password.
-      </Text>
-      
-      <View style={styles.toggleContainer}>
-        <TouchableOpacity
-          style={[
-            styles.toggleButton,
-            identifierType === 'email' && styles.toggleButtonActive
-          ]}
-          onPress={() => setIdentifierType('email')}
-        >
-          <Text
-            style={[
-              styles.toggleButtonText,
-              identifierType === 'email' && styles.toggleButtonTextActive
-            ]}
-          >
-            Email
-          </Text>
-        </TouchableOpacity>
-        
-        <TouchableOpacity
-          style={[
-            styles.toggleButton,
-            identifierType === 'username' && styles.toggleButtonActive
-          ]}
-          onPress={() => setIdentifierType('username')}
-        >
-          <Text
-            style={[
-              styles.toggleButtonText,
-              identifierType === 'username' && styles.toggleButtonTextActive
-            ]}
-          >
-            Username
-          </Text>
-        </TouchableOpacity>
-      </View>
-      
-      <View style={styles.inputContainer}>
-        <Text style={styles.label}>
-          {identifierType === 'email' ? 'Email' : 'Username'}
-        </Text>
-        <View style={styles.inputWrapper}>
-          <Ionicons 
-            name={identifierType === 'email' ? "mail-outline" : "person-outline"} 
-            size={20} 
-            color={COLORS.textSecondary} 
-            style={styles.inputIcon} 
-          />
-          <TextInput
-            style={styles.input}
-            placeholder={identifierType === 'email' ? "Enter your email" : "Enter your username"}
-            value={identifier}
-            onChangeText={setIdentifier}
-            autoCapitalize="none"
-            autoCorrect={false}
-            keyboardType={identifierType === 'email' ? "email-address" : "default"}
-            autoComplete="off"
-            textContentType={identifierType === 'email' ? "emailAddress" : "username"}
-            placeholderTextColor={COLORS.textSecondary}
-          />
-        </View>
-      </View>
-      
-      {error && (
-        <View style={styles.errorContainer}>
-          <Text style={styles.errorText}>{error}</Text>
-        </View>
-      )}
-      
-      <TouchableOpacity
-        style={styles.primaryButton}
-        onPress={handleRequestResetToken}
-        disabled={loading}
-      >
-        {loading ? (
-          <ActivityIndicator color="#FFFFFF" />
-        ) : (
-          <Text style={styles.primaryButtonText}>Send Reset Token</Text>
-        )}
-      </TouchableOpacity>
-      
-      <TouchableOpacity
-        style={styles.secondaryButton}
-        onPress={handleGoBack}
-      >
-        <Text style={styles.secondaryButtonText}>Back to Login</Text>
-      </TouchableOpacity>
-    </>
-  );
-
-  const renderStepTwo = () => (
-    <>
-      <Text style={styles.stepTitle}>Enter Reset Token</Text>
-      <Text style={styles.stepDescription}>
-        We've sent a token to the email associated with your account. Please enter it below.
-      </Text>
-      
-      {successMessage && (
-        <View style={styles.successContainer}>
-          <Text style={styles.successText}>{successMessage}</Text>
-        </View>
-      )}
-
-      <View style={styles.timerContainer}>
-        <Ionicons name="timer-outline" size={20} color={COLORS.textSecondary} />
-        <Text style={styles.timerText}>
-          Token expires in {formatTime(remainingTime)}
-        </Text>
-      </View>
-      
-      <View style={styles.inputContainer}>
-        <Text style={styles.label}>Reset Token</Text>
-        <View style={styles.inputWrapper}>
-          <Ionicons name="key-outline" size={20} color={COLORS.textSecondary} style={styles.inputIcon} />
-          <TextInput
-            style={styles.input}
-            placeholder="Enter the 8-digit token"
-            value={resetToken}
-            onChangeText={setResetToken}
-            autoCapitalize="none"
-            keyboardType="default"
-            maxLength={8}
-            placeholderTextColor={COLORS.textSecondary}
-          />
-        </View>
-      </View>
-      
-      {error && (
-        <View style={styles.errorContainer}>
-          <Text style={styles.errorText}>{error}</Text>
-        </View>
-      )}
-      
-      <TouchableOpacity
-        style={styles.primaryButton}
-        onPress={handleVerifyToken}
-        disabled={loading || resetToken.length !== 8}
-      >
-        {loading ? (
-          <ActivityIndicator color="#FFFFFF" />
-        ) : (
-          <Text style={styles.primaryButtonText}>Verify Token</Text>
-        )}
-      </TouchableOpacity>
-      
-      {(remainingTime <= 0 || showRequestNewToken) && (
-        <TouchableOpacity
-          style={styles.textButton}
-          onPress={handleResendToken}
-          disabled={resendLoading}
-        >
-          {resendLoading ? (
-            <ActivityIndicator size="small" color={COLORS.primary} />
-          ) : (
-            <Text style={styles.textButtonText}>Request New Token</Text>
-          )}
-        </TouchableOpacity>
-      )}
-      
-      <TouchableOpacity
-        style={styles.secondaryButton}
-        onPress={() => setCurrentStep(1)}
-      >
-        <Text style={styles.secondaryButtonText}>Back</Text>
-      </TouchableOpacity>
-    </>
-  );
-
-  const renderStepThree = () => (
-    <>
-      <Text style={styles.stepTitle}>Create New Password</Text>
-      <Text style={styles.stepDescription}>
-        Please enter and confirm your new password.
-      </Text>
-      
-      <View style={styles.inputContainer}>
-        <Text style={styles.label}>New Password</Text>
-        <View style={styles.passwordContainer}>
-          <Ionicons name="lock-closed-outline" size={20} color={COLORS.textSecondary} style={styles.inputIcon} />
-          <TextInput
-            style={[styles.input, styles.passwordInput]}
-            placeholder="Enter new password"
-            value={newPassword}
-            onChangeText={setNewPassword}
-            secureTextEntry={!showNewPassword}
-            autoCapitalize="none"
-            textContentType="oneTimeCode"
-            placeholderTextColor={COLORS.textSecondary}
-          />
-          <TouchableOpacity 
-            style={styles.passwordToggle}
-            onPress={() => setShowNewPassword(!showNewPassword)}
-          >
-            <Ionicons 
-              name={showNewPassword ? 'eye-off' : 'eye'} 
-              size={24} 
-              color={COLORS.textSecondary} 
-            />
-          </TouchableOpacity>
-        </View>
-        <Text style={styles.hintText}>
-          Password must be 8-20 characters and include uppercase, lowercase, number, and special character.
-        </Text>
-      </View>
-      
-      <View style={styles.inputContainer}>
-        <Text style={styles.label}>Confirm Password</Text>
-        <View style={styles.passwordContainer}>
-          <Ionicons name="lock-closed-outline" size={20} color={COLORS.textSecondary} style={styles.inputIcon} />
-          <TextInput
-            style={[styles.input, styles.passwordInput]}
-            placeholder="Confirm new password"
-            value={confirmPassword}
-            onChangeText={setConfirmPassword}
-            secureTextEntry={!showConfirmPassword}
-            autoCapitalize="none"
-            textContentType="oneTimeCode"
-            placeholderTextColor={COLORS.textSecondary}
-          />
-          <TouchableOpacity 
-            style={styles.passwordToggle}
-            onPress={() => setShowConfirmPassword(!showConfirmPassword)}
-          >
-            <Ionicons 
-              name={showConfirmPassword ? 'eye-off' : 'eye'} 
-              size={24} 
-              color={COLORS.textSecondary} 
-            />
-          </TouchableOpacity>
-        </View>
-      </View>
-      
-      {error && (
-        <View style={styles.errorContainer}>
-          <Text style={styles.errorText}>{error}</Text>
-        </View>
-      )}
-      
-      <TouchableOpacity
-        style={styles.primaryButton}
-        onPress={handleResetPassword}
-        disabled={loading}
-      >
-        {loading ? (
-          <ActivityIndicator color="#FFFFFF" />
-        ) : (
-          <Text style={styles.primaryButtonText}>Reset Password</Text>
-        )}
-      </TouchableOpacity>
-      
-      <TouchableOpacity
-        style={styles.secondaryButton}
-        onPress={() => setCurrentStep(2)}
-      >
-        <Text style={styles.secondaryButtonText}>Back</Text>
-      </TouchableOpacity>
-    </>
-  );
-
+  
   return (
-    <SafeAreaView style={styles.safeArea}>
-      <KeyboardAvoidingView
-        behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
-        style={styles.container}
-      >
-        <TouchableWithoutFeedback onPress={Keyboard.dismiss}>
-          <ScrollView 
-            contentContainerStyle={styles.scrollContent}
-            showsVerticalScrollIndicator={false}
+    <KeyboardAvoidingView
+      behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+      style={styles.keyboardAvoidView}
+    >
+      <DismissKeyboardView style={styles.container}>
+        <ScrollView
+          contentContainerStyle={styles.scrollContainer}
+          keyboardShouldPersistTaps="handled"
+        >
+          <Animated.View 
+            style={[
+              styles.card,
+              {
+                opacity: fadeAnim,
+                transform: [{ translateY: slideAnim }]
+              }
+            ]}
           >
-            <View style={styles.card}>
-              <View style={styles.logoContainer}>
-                <Logo width={220} />
-              </View>
-              
-              {networkError ? (
-                <View style={styles.errorContainer}>
-                  <Text style={styles.errorText}>{error}</Text>
-                  <TouchableOpacity 
-                    style={styles.retryButton}
-                    onPress={checkConnectivity}
+            <View style={styles.logoContainer}>
+              <Logo width={200} />
+            </View>
+            
+            {/* Step 1: Enter Username */}
+            {currentStep === 1 && (
+              <>
+                <Text style={styles.headerText}>Forgot Password</Text>
+                <Text style={styles.subHeaderText}>
+                  Enter your username to begin the password reset process.
+                </Text>
+                
+                <StandardError 
+                  message={error}
+                  showRetry={false}
+                  style={styles.errorMargin}
+                />
+                
+                <View style={styles.inputContainer}>
+                  <Text style={styles.label}>Username</Text>
+                  <View style={styles.inputWrapper}>
+                    <Ionicons name="person-outline" size={20} color={COLORS.textSecondary} style={styles.inputIcon} />
+                    <TextInput
+                      style={styles.input}
+                      placeholder="Enter your username"
+                      value={username}
+                      onChangeText={setUsername}
+                      autoCapitalize="none"
+                      autoCorrect={false}
+                      placeholderTextColor={COLORS.textSecondary}
+                    />
+                  </View>
+                </View>
+                
+                <TouchableOpacity
+                  style={styles.primaryButton}
+                  onPress={handleUsernameSubmit}
+                  disabled={loading}
+                >
+                  {loading ? (
+                    <ActivityIndicator color="#FFFFFF" />
+                  ) : (
+                    <Text style={styles.primaryButtonText}>Continue</Text>
+                  )}
+                </TouchableOpacity>
+                
+                <View style={styles.linkContainer}>
+                  <TouchableOpacity
+                    onPress={() => router.push('/forgot-username')}
                   >
-                    <Text style={styles.retryText}>Retry Connection</Text>
+                    <Text style={styles.linkText}>Forgot Username?</Text>
                   </TouchableOpacity>
                 </View>
-              ) : (
-                <>
-                  {currentStep === 1 && renderStepOne()}
-                  {currentStep === 2 && renderStepTwo()}
-                  {currentStep === 3 && renderStepThree()}
-                </>
-              )}
-            </View>
-          </ScrollView>
-        </TouchableWithoutFeedback>
-      </KeyboardAvoidingView>
-    </SafeAreaView>
+                
+                <TouchableOpacity
+                  style={styles.secondaryButton}
+                  onPress={handleGoBack}
+                >
+                  <Text style={styles.secondaryButtonText}>Back to Login</Text>
+                </TouchableOpacity>
+              </>
+            )}
+            
+            {/* Step 2: Answer Security Questions */}
+            {currentStep === 2 && (
+              <>
+                <Text style={styles.headerText}>Security Questions</Text>
+                <Text style={styles.subHeaderText}>
+                  Please answer your security questions to verify your identity.
+                </Text>
+                
+                <StandardError 
+                  message={error}
+                  showRetry={false}
+                  style={styles.errorMargin}
+                />
+                
+                {securityQuestions.map((question, index) => (
+                  <View key={question.id} style={styles.inputContainer}>
+                    <Text style={styles.label}>Question {index + 1}</Text>
+                    <Text style={styles.questionText}>{question.question}</Text>
+                    <View style={styles.inputWrapper}>
+                      <Ionicons name="shield-checkmark-outline" size={20} color={COLORS.textSecondary} style={styles.inputIcon} />
+                      <TextInput
+                        style={styles.input}
+                        placeholder="Your answer"
+                        value={securityAnswers[question.id] || ''}
+                        onChangeText={(text) => handleAnswerChange(question.id, text)}
+                        autoCapitalize="none"
+                        autoCorrect={false}
+                        placeholderTextColor={COLORS.textSecondary}
+                      />
+                    </View>
+                  </View>
+                ))}
+                
+                <TouchableOpacity
+                  style={styles.primaryButton}
+                  onPress={handleSecurityAnswersSubmit}
+                  disabled={loading}
+                >
+                  {loading ? (
+                    <ActivityIndicator color="#FFFFFF" />
+                  ) : (
+                    <Text style={styles.primaryButtonText}>Verify Answers</Text>
+                  )}
+                </TouchableOpacity>
+                
+                <TouchableOpacity
+                  style={styles.secondaryButton}
+                  onPress={handleGoBack}
+                >
+                  <Text style={styles.secondaryButtonText}>Back</Text>
+                </TouchableOpacity>
+              </>
+            )}
+            
+            {/* Step 3: Reset Password */}
+            {currentStep === 3 && (
+              <>
+                <Text style={styles.headerText}>Reset Password</Text>
+                <Text style={styles.subHeaderText}>
+                  Create a new password for your account.
+                </Text>
+                
+                {/* Display current username for debugging */}
+                <Text style={[styles.subHeaderText, {fontSize: 12, color: '#999'}]}>
+                  Username: {username}
+                </Text>
+                
+                <StandardError 
+                  message={error}
+                  showRetry={false}
+                  style={styles.errorMargin}
+                />
+                
+                {/* Show verification success message without redirect text */}
+                {successMessage && (
+                  <View style={styles.successContainer}>
+                    <Text style={styles.successText}>{successMessage}</Text>
+                  </View>
+                )}
+                
+                <View style={styles.inputContainer}>
+                  <Text style={styles.label}>New Password</Text>
+                  <View style={styles.passwordContainer}>
+                    <Ionicons name="lock-closed-outline" size={20} color={COLORS.textSecondary} style={styles.inputIcon} />
+                    <TextInput
+                      style={[styles.input, styles.passwordInput]}
+                      placeholder="Enter new password"
+                      value={newPassword}
+                      onChangeText={setNewPassword}
+                      secureTextEntry={!showPassword}
+                      autoCapitalize="none"
+                      autoCorrect={false}
+                      placeholderTextColor={COLORS.textSecondary}
+                    />
+                    <TouchableOpacity 
+                      style={styles.passwordToggle}
+                      onPress={() => setShowPassword(!showPassword)}
+                    >
+                      <Ionicons 
+                        name={showPassword ? 'eye-off' : 'eye'} 
+                        size={24} 
+                        color={COLORS.textSecondary} 
+                      />
+                    </TouchableOpacity>
+                  </View>
+                </View>
+                
+                <View style={styles.inputContainer}>
+                  <Text style={styles.label}>Confirm Password</Text>
+                  <View style={styles.passwordContainer}>
+                    <Ionicons name="lock-closed-outline" size={20} color={COLORS.textSecondary} style={styles.inputIcon} />
+                    <TextInput
+                      style={[styles.input, styles.passwordInput]}
+                      placeholder="Confirm new password"
+                      value={confirmPassword}
+                      onChangeText={setConfirmPassword}
+                      secureTextEntry={!showPassword}
+                      autoCapitalize="none"
+                      autoCorrect={false}
+                      placeholderTextColor={COLORS.textSecondary}
+                    />
+                  </View>
+                </View>
+                
+                <TouchableOpacity
+                  style={styles.primaryButton}
+                  onPress={handleResetPassword}
+                  disabled={loading}
+                >
+                  {loading ? (
+                    <ActivityIndicator color="#FFFFFF" />
+                  ) : (
+                    <Text style={styles.primaryButtonText}>Reset Password</Text>
+                  )}
+                </TouchableOpacity>
+                
+                <TouchableOpacity
+                  style={styles.secondaryButton}
+                  onPress={handleGoBack}
+                  disabled={loading}
+                >
+                  <Text style={styles.secondaryButtonText}>Back</Text>
+                </TouchableOpacity>
+              </>
+            )}
+          </Animated.View>
+        </ScrollView>
+      </DismissKeyboardView>
+    </KeyboardAvoidingView>
   );
 }
 
 const styles = StyleSheet.create({
-  safeArea: {
+  keyboardAvoidView: {
     flex: 1,
-    backgroundColor: COLORS.background,
   },
   container: {
     flex: 1,
-    padding: 20,
+    backgroundColor: COLORS.background,
   },
-  scrollContent: {
+  scrollContainer: {
     flexGrow: 1,
-    paddingBottom: 40,
+    justifyContent: 'center',
+    alignItems: 'center',
+    padding: 20,
   },
   loadingContainer: {
     flex: 1,
@@ -777,6 +625,8 @@ const styles = StyleSheet.create({
   card: {
     backgroundColor: COLORS.cardBg,
     borderRadius: 12,
+    width: '100%',
+    maxWidth: 400,
     padding: 24,
     shadowColor: '#000',
     shadowOffset: { width: 0, height: 2 },
@@ -786,49 +636,24 @@ const styles = StyleSheet.create({
   },
   logoContainer: {
     alignItems: 'center',
-    marginBottom: 30,
+    marginBottom: 20,
   },
-  stepTitle: {
+  headerText: {
     fontSize: 24,
     fontWeight: 'bold',
     color: COLORS.text,
-    marginBottom: 12,
+    marginBottom: 10,
     textAlign: 'center',
   },
-  stepDescription: {
-    fontSize: 14,
+  subHeaderText: {
+    fontSize: 16,
     color: COLORS.textSecondary,
     marginBottom: 24,
     textAlign: 'center',
-    lineHeight: 20,
-  },
-  toggleContainer: {
-    flexDirection: 'row',
-    marginBottom: 24,
-    borderRadius: 8,
-    borderWidth: 1,
-    borderColor: COLORS.border,
-    overflow: 'hidden',
-  },
-  toggleButton: {
-    flex: 1,
-    paddingVertical: 12,
-    alignItems: 'center',
-    backgroundColor: COLORS.inputBg,
-  },
-  toggleButtonActive: {
-    backgroundColor: COLORS.primary,
-  },
-  toggleButtonText: {
-    fontSize: 14,
-    fontWeight: '500',
-    color: COLORS.text,
-  },
-  toggleButtonTextActive: {
-    color: COLORS.secondary,
+    lineHeight: 22,
   },
   inputContainer: {
-    marginBottom: 20,
+    marginBottom: 16,
   },
   label: {
     fontSize: 14,
@@ -836,7 +661,21 @@ const styles = StyleSheet.create({
     color: COLORS.text,
     marginBottom: 8,
   },
+  questionText: {
+    fontSize: 16,
+    color: COLORS.text,
+    marginBottom: 10,
+    fontWeight: '500',
+  },
   inputWrapper: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: COLORS.inputBg,
+    borderRadius: 8,
+    borderWidth: 1,
+    borderColor: COLORS.border,
+  },
+  passwordContainer: {
     flexDirection: 'row',
     alignItems: 'center',
     backgroundColor: COLORS.inputBg,
@@ -855,62 +694,17 @@ const styles = StyleSheet.create({
     fontSize: 16,
     color: COLORS.text,
   },
-  passwordContainer: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    backgroundColor: COLORS.inputBg,
-    borderRadius: 8,
-    borderWidth: 1,
-    borderColor: COLORS.border,
-  },
   passwordInput: {
-    paddingRight: 40,
+    paddingRight: 50,
   },
   passwordToggle: {
     position: 'absolute',
     right: 12,
-    padding: 8,
-  },
-  hintText: {
-    fontSize: 12,
-    color: COLORS.textSecondary,
-    marginTop: 4,
-  },
-  errorContainer: {
-    backgroundColor: 'rgba(255, 107, 107, 0.1)',
-    padding: 12,
-    borderRadius: 8,
-    marginBottom: 20,
-    borderWidth: 1,
-    borderColor: COLORS.error,
-  },
-  errorText: {
-    color: COLORS.error,
-    textAlign: 'center',
-    marginBottom: 8,
-  },
-  successContainer: {
-    backgroundColor: 'rgba(76, 175, 80, 0.1)',
-    padding: 12,
-    borderRadius: 8,
-    marginBottom: 20,
-    borderWidth: 1,
-    borderColor: COLORS.success,
-  },
-  successText: {
-    color: COLORS.success,
-    textAlign: 'center',
-  },
-  timerContainer: {
-    flexDirection: 'row',
-    alignItems: 'center',
+    height: 50,
     justifyContent: 'center',
-    marginBottom: 20,
   },
-  timerText: {
-    fontSize: 14,
-    color: COLORS.textSecondary,
-    marginLeft: 8,
+  errorMargin: {
+    marginBottom: 16,
   },
   primaryButton: {
     backgroundColor: COLORS.primary,
@@ -918,6 +712,7 @@ const styles = StyleSheet.create({
     borderRadius: 8,
     justifyContent: 'center',
     alignItems: 'center',
+    marginTop: 8,
     marginBottom: 16,
   },
   primaryButtonText: {
@@ -932,31 +727,41 @@ const styles = StyleSheet.create({
     borderRadius: 8,
     justifyContent: 'center',
     alignItems: 'center',
-    marginBottom: 16,
   },
   secondaryButtonText: {
     color: COLORS.primary,
     fontSize: 16,
     fontWeight: '500',
   },
-  textButton: {
-    padding: 8,
+  linkContainer: {
     marginBottom: 16,
     alignItems: 'center',
   },
-  textButtonText: {
+  linkText: {
     color: COLORS.primary,
     fontSize: 14,
-    fontWeight: '500',
+    textDecorationLine: 'underline',
   },
-  retryButton: {
-    backgroundColor: '#F0F0F0',
-    padding: 10,
-    borderRadius: 5,
-    alignItems: 'center',
+  successContainer: {
+    backgroundColor: `${COLORS.success}20`,
+    borderRadius: 8,
+    padding: 12,
+    marginBottom: 16,
+    borderWidth: 1,
+    borderColor: COLORS.success,
   },
-  retryText: {
-    color: COLORS.primary,
-    fontWeight: '500',
+  successText: {
+    color: COLORS.success,
+    fontSize: 14,
+    textAlign: 'center',
+  },
+  tokenContainer: {
+    marginBottom: 16,
+  },
+  tokenExpiryText: {
+    color: COLORS.textSecondary,
+    fontSize: 14,
+    textAlign: 'center',
+    marginBottom: 8,
   },
 }); 

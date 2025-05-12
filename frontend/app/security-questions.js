@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, memo } from 'react';
 import { 
   StyleSheet, 
   View, 
@@ -9,15 +9,16 @@ import {
   ScrollView,
   SafeAreaView,
   KeyboardAvoidingView,
-  Platform,
-  Alert
+  Platform
 } from 'react-native';
-import { router } from 'expo-router';
-import { Picker } from '@react-native-picker/picker';
+import { router, useLocalSearchParams } from 'expo-router';
+import { Dropdown } from 'react-native-element-dropdown';
 import { authService } from '../services/api';
 import { DismissKeyboardView } from '../services/keyboardUtils';
 import Logo from '../services/logoComponent';
 import { Ionicons } from '@expo/vector-icons';
+import { Animated } from 'react-native';
+import * as SecureStore from 'expo-secure-store';
 
 // PEAKMODE color theme based on logo
 const COLORS = {
@@ -33,11 +34,36 @@ const COLORS = {
   success: '#4CAF50', // Green for success
 };
 
+// Storage key for user data
+const USER_KEY = 'peakmode_user';
+
+// Fix React error by using memo and proper function declaration
+const SimpleErrorComponent = memo(function SimpleErrorComponent(props) {
+  const { message, style } = props;
+  
+  // If there's no message, don't render anything
+  if (!message) return null;
+  
+  return (
+    <View style={[styles.errorContainer, style]}>
+      <Text style={styles.errorText}>All 3 security answers are required</Text>
+    </View>
+  );
+});
+
+// Export for easier imports
+const SimpleError = SimpleErrorComponent;
+
 export default function SecurityQuestionsScreen() {
   const [allQuestions, setAllQuestions] = useState([]);
+  const [questionData, setQuestionData] = useState([]);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState('');
+  const [userId, setUserId] = useState('');
+  
+  // Get URL parameters
+  const params = useLocalSearchParams();
   
   // Selected questions and answers
   const [question1, setQuestion1] = useState('');
@@ -49,15 +75,71 @@ export default function SecurityQuestionsScreen() {
   
   const [username, setUsername] = useState('');
   
-  // Get available security questions when component mounts
+  // Hide any bottom alert
   useEffect(() => {
-    fetchSecurityQuestions();
+    // Find and hide any alert elements
+    const hideAlerts = () => {
+      if (typeof document !== 'undefined') {
+        const alerts = document.querySelectorAll('[role="alert"]');
+        alerts.forEach(alert => {
+          alert.style.display = 'none';
+        });
+      }
+    };
     
-    // Check if we have a username from route params
-    if (router.params?.username) {
-      setUsername(router.params.username);
-    }
+    // Run immediately and after a delay to catch any alerts
+    hideAlerts();
+    const timer = setTimeout(hideAlerts, 500);
+    
+    return () => clearTimeout(timer);
   }, []);
+  
+  // Get available security questions and user information when component mounts
+  useEffect(() => {
+    const initializeData = async () => {
+      await fetchSecurityQuestions();
+      await getUserData();
+    };
+    
+    initializeData();
+  }, []);
+  
+  // Get user data from params or secure storage
+  const getUserData = async () => {
+    try {
+      // First check URL params (from signup flow)
+      if (params?.username) {
+        setUsername(params.username);
+        console.log('Username set from params:', params.username);
+        
+        // Check if we have a userId from params (this is what we need!)
+        if (params?.userId) {
+          setUserId(params.userId);
+          console.log('UserID set from params:', params.userId);
+          return;
+        }
+      }
+      
+      // If not from params, try to get from secure storage (from settings flow)
+      const userJson = await SecureStore.getItemAsync(USER_KEY);
+      if (userJson) {
+        const userData = JSON.parse(userJson);
+        if (userData.username) {
+          setUsername(userData.username);
+          console.log('Username set from secure storage:', userData.username);
+        }
+        if (userData.id) {
+          setUserId(userData.id.toString());
+          console.log('UserID set from secure storage:', userData.id);
+        }
+      } else {
+        console.log('No user data found in secure storage');
+      }
+    } catch (error) {
+      // Don't call console.error, just set the error message
+      setError('Unable to retrieve user information');
+    }
+  };
   
   // Fetch all available security questions
   const fetchSecurityQuestions = async () => {
@@ -67,20 +149,30 @@ export default function SecurityQuestionsScreen() {
       const data = await response.json();
       
       if (data && data.data && Array.isArray(data.data.questions)) {
-        setAllQuestions(data.data.questions);
+        const questions = data.data.questions;
+        setAllQuestions(questions);
+        
+        // Format questions for Dropdown component
+        const formattedQuestions = questions.map(q => ({
+          value: q.id.toString(),
+          label: q.question
+        }));
+        
+        setQuestionData(formattedQuestions);
         
         // Pre-select the first three questions
-        if (data.data.questions.length >= 3) {
-          setQuestion1(data.data.questions[0].id);
-          setQuestion2(data.data.questions[1].id);
-          setQuestion3(data.data.questions[2].id);
+        if (questions.length >= 3) {
+          setQuestion1(questions[0].id.toString());
+          setQuestion2(questions[1].id.toString());
+          setQuestion3(questions[2].id.toString());
         }
       } else {
+        // Set error for user display instead of console.error
         setError('Failed to load security questions');
       }
     } catch (error) {
-      console.error('Error fetching security questions:', error);
-      setError('Failed to load security questions. Please try again.');
+      // Set error for user display instead of console.error
+      setError('Failed to load security questions');
     } finally {
       setLoading(false);
     }
@@ -88,9 +180,12 @@ export default function SecurityQuestionsScreen() {
   
   // Save security questions and answers
   const handleSaveQuestions = async () => {
+    // Clear any previous errors
+    setError('');
+    
     // Validate inputs
     if (!answer1 || !answer2 || !answer3) {
-      setError('Please answer all three security questions');
+      setError('All 3 security answers are required');
       return;
     }
     
@@ -99,16 +194,25 @@ export default function SecurityQuestionsScreen() {
       return;
     }
     
+    if (!username || !userId) {
+      // Use standard validation error message instead of logging to console
+      setError('User information is missing');
+      return;
+    }
+    
     try {
       setSaving(true);
-      setError('');
       
+      // Extract just the numeric part of userId and convert to Number
+      const numericUserId = Number(userId.toString().replace(/\D/g, ''));
+      
+      // Format exactly as the server expects - be very careful about types
       const payload = {
-        username,
-        securityQuestions: [
-          { questionId: question1, answer: answer1 },
-          { questionId: question2, answer: answer2 },
-          { questionId: question3, answer: answer3 }
+        userId: numericUserId, // Use the numeric value
+        answers: [
+          { questionId: Number(question1), answer: answer1.trim() },
+          { questionId: Number(question2), answer: answer2.trim() },
+          { questionId: Number(question3), answer: answer3.trim() }
         ]
       };
       
@@ -122,33 +226,28 @@ export default function SecurityQuestionsScreen() {
       
       const data = await response.json();
       
-      if (response.ok) {
-        Alert.alert(
-          'Success',
-          'Your security questions have been saved. You can now log in to your account.',
-          [{ 
-            text: 'OK', 
-            onPress: () => {
-              // Clear any state and navigate to login
-              router.replace('/');
-            }
-          }]
-        );
+      if (data.status === 'success') {
+        // Only navigate on success
+        router.replace('/');
       } else {
+        // Show error message
         setError(data.message || 'Failed to save security questions');
       }
     } catch (error) {
-      console.error('Error saving security questions:', error);
-      setError('Failed to save security questions. Please try again.');
+      // Set error message instead of logging to console
+      setError('Failed to connect to server. Please try again.');
     } finally {
       setSaving(false);
     }
   };
   
-  // Get question text by ID
-  const getQuestionText = (id) => {
-    const question = allQuestions.find(q => q.id === parseInt(id));
-    return question ? question.question : 'Loading...';
+  // Render dropdown item
+  const renderItem = (item) => {
+    return (
+      <View style={styles.dropdownItem}>
+        <Text style={styles.dropdownText}>{item.label}</Text>
+      </View>
+    );
   };
   
   if (loading) {
@@ -180,28 +279,33 @@ export default function SecurityQuestionsScreen() {
               Please select and answer three security questions. These will be used to verify your identity if you need to reset your password.
             </Text>
             
-            {error ? (
-              <View style={styles.errorContainer}>
-                <Text style={styles.errorText}>{error}</Text>
-              </View>
-            ) : null}
+            <SimpleError 
+              message={error}
+              style={styles.errorMargin}
+            />
             
             <View style={styles.formContainer}>
               {/* Question 1 */}
               <View style={styles.questionContainer}>
                 <Text style={styles.label}>Question 1</Text>
-                <View style={styles.pickerWrapper}>
-                  <Picker
-                    selectedValue={question1}
-                    onValueChange={(value) => setQuestion1(value)}
-                    style={styles.picker}
-                    itemStyle={styles.pickerItem}
-                  >
-                    {allQuestions.map(q => (
-                      <Picker.Item key={q.id} label={q.question} value={q.id} />
-                    ))}
-                  </Picker>
-                </View>
+                <Dropdown
+                  style={styles.dropdown}
+                  placeholderStyle={styles.placeholderStyle}
+                  selectedTextStyle={styles.selectedTextStyle}
+                  data={questionData}
+                  maxHeight={200}
+                  labelField="label"
+                  valueField="value"
+                  placeholder="Select a security question"
+                  value={question1}
+                  onChange={item => {
+                    setQuestion1(item.value);
+                  }}
+                  renderItem={renderItem}
+                  renderRightIcon={() => (
+                    <Ionicons name="chevron-down" size={20} color={COLORS.text} />
+                  )}
+                />
                 
                 <Text style={styles.label}>Answer</Text>
                 <View style={styles.inputWrapper}>
@@ -218,18 +322,24 @@ export default function SecurityQuestionsScreen() {
               {/* Question 2 */}
               <View style={styles.questionContainer}>
                 <Text style={styles.label}>Question 2</Text>
-                <View style={styles.pickerWrapper}>
-                  <Picker
-                    selectedValue={question2}
-                    onValueChange={(value) => setQuestion2(value)}
-                    style={styles.picker}
-                    itemStyle={styles.pickerItem}
-                  >
-                    {allQuestions.map(q => (
-                      <Picker.Item key={q.id} label={q.question} value={q.id} />
-                    ))}
-                  </Picker>
-                </View>
+                <Dropdown
+                  style={styles.dropdown}
+                  placeholderStyle={styles.placeholderStyle}
+                  selectedTextStyle={styles.selectedTextStyle}
+                  data={questionData}
+                  maxHeight={200}
+                  labelField="label"
+                  valueField="value"
+                  placeholder="Select a security question"
+                  value={question2}
+                  onChange={item => {
+                    setQuestion2(item.value);
+                  }}
+                  renderItem={renderItem}
+                  renderRightIcon={() => (
+                    <Ionicons name="chevron-down" size={20} color={COLORS.text} />
+                  )}
+                />
                 
                 <Text style={styles.label}>Answer</Text>
                 <View style={styles.inputWrapper}>
@@ -246,18 +356,24 @@ export default function SecurityQuestionsScreen() {
               {/* Question 3 */}
               <View style={styles.questionContainer}>
                 <Text style={styles.label}>Question 3</Text>
-                <View style={styles.pickerWrapper}>
-                  <Picker
-                    selectedValue={question3}
-                    onValueChange={(value) => setQuestion3(value)}
-                    style={styles.picker}
-                    itemStyle={styles.pickerItem}
-                  >
-                    {allQuestions.map(q => (
-                      <Picker.Item key={q.id} label={q.question} value={q.id} />
-                    ))}
-                  </Picker>
-                </View>
+                <Dropdown
+                  style={styles.dropdown}
+                  placeholderStyle={styles.placeholderStyle}
+                  selectedTextStyle={styles.selectedTextStyle}
+                  data={questionData}
+                  maxHeight={200}
+                  labelField="label"
+                  valueField="value"
+                  placeholder="Select a security question"
+                  value={question3}
+                  onChange={item => {
+                    setQuestion3(item.value);
+                  }}
+                  renderItem={renderItem}
+                  renderRightIcon={() => (
+                    <Ionicons name="chevron-down" size={20} color={COLORS.text} />
+                  )}
+                />
                 
                 <Text style={styles.label}>Answer</Text>
                 <View style={styles.inputWrapper}>
@@ -362,19 +478,31 @@ const styles = StyleSheet.create({
     color: COLORS.text,
     marginBottom: 8,
   },
-  pickerWrapper: {
+  // Styles for Dropdown component
+  dropdown: {
+    height: 50,
     borderWidth: 1,
     borderColor: COLORS.border,
     borderRadius: 8,
     backgroundColor: COLORS.inputBg,
+    paddingHorizontal: 16,
     marginBottom: 15,
   },
-  picker: {
-    height: 50,
-    width: '100%',
+  placeholderStyle: {
+    fontSize: 16,
+    color: COLORS.textSecondary,
   },
-  pickerItem: {
-    height: 50,
+  selectedTextStyle: {
+    fontSize: 16,
+    color: COLORS.text,
+  },
+  dropdownItem: {
+    padding: 16,
+    borderBottomWidth: 1,
+    borderBottomColor: COLORS.border,
+  },
+  dropdownText: {
+    fontSize: 16,
     color: COLORS.text,
   },
   inputWrapper: {
@@ -394,17 +522,19 @@ const styles = StyleSheet.create({
   },
   errorContainer: {
     backgroundColor: 'rgba(255, 107, 107, 0.1)',
-    padding: 12,
-    borderRadius: 8,
-    marginBottom: 20,
     borderWidth: 1,
     borderColor: COLORS.error,
+    borderRadius: 8,
+    padding: 16,
+    marginBottom: 16,
   },
   errorText: {
     color: COLORS.error,
+    fontSize: 14,
     textAlign: 'center',
-    fontWeight: 'bold',
-    fontSize: 15,
+  },
+  errorMargin: {
+    marginBottom: 16,
   },
   saveButton: {
     backgroundColor: COLORS.primary,

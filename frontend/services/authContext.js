@@ -1,9 +1,10 @@
-import React, { createContext, useState, useEffect, useContext } from 'react';
+import React, { createContext, useState, useEffect, useContext, useCallback, useRef } from 'react';
 import { router } from 'expo-router';
 import * as SecureStore from 'expo-secure-store';
 import { authService } from './api';
+import { View, ActivityIndicator, Text } from 'react-native';
 
-const TOKEN_KEY = 'peakmode_auth_token';
+// Only need user key now
 const USER_KEY = 'peakmode_user';
 
 // Create context
@@ -14,6 +15,9 @@ export const AuthProvider = ({ children }) => {
   const [isAuthenticated, setIsAuthenticated] = useState(false);
   const [user, setUser] = useState(null);
   const [loading, setLoading] = useState(true);
+  
+  // Keep track of auth operations to prevent UI flashing
+  const authOperationInProgress = useRef(false);
 
   // Check auth status when app loads
   useEffect(() => {
@@ -24,19 +28,17 @@ export const AuthProvider = ({ children }) => {
   const checkAuthStatus = async () => {
     try {
       setLoading(true);
-      const token = await SecureStore.getItemAsync(TOKEN_KEY);
       
-      if (token) {
-        // We have a token, but also verify if it's valid
+      // Check if user data exists
+      const userJson = await SecureStore.getItemAsync(USER_KEY);
+      
+      if (userJson) {
+        // We have user data
         try {
-          // Try to get user data
-          const userJson = await SecureStore.getItemAsync(USER_KEY);
-          if (userJson) {
-            setUser(JSON.parse(userJson));
-          }
+          setUser(JSON.parse(userJson));
           setIsAuthenticated(true);
         } catch (error) {
-          console.error('Error loading user data:', error);
+          console.error('Error parsing user data:', error);
           await logout(); // Force logout if any error
         }
       } else {
@@ -52,51 +54,92 @@ export const AuthProvider = ({ children }) => {
     }
   };
 
-  // Login function
-  const login = async (credentials) => {
+  // Login function - optimized with useCallback
+  const login = useCallback(async (credentials) => {
+    // Set flag to indicate auth operation is in progress
+    authOperationInProgress.current = true;
+    
     try {
       setLoading(true);
+      console.log("Login attempt for:", credentials.username);
+      
+      // Get user data from API
       const userData = await authService.login(credentials);
+      console.log("Login successful, user data received:", JSON.stringify(userData));
+      
+      // Set authentication state
       setUser(userData);
       setIsAuthenticated(true);
+      
+      // Give UI a moment to update before navigation
+      setTimeout(() => {
+        console.log("Navigating to profile page...");
+        
+        // Force navigation to profile
+        try {
+          router.replace('/profile');
+          console.log("Navigation to profile executed");
+        } catch (error) {
+          console.error("Navigation error:", error);
+          // Try again once more if it fails
+          setTimeout(() => {
+            try {
+              router.replace('/profile');
+            } catch (fallbackError) {
+              console.error("Fallback navigation failed:", fallbackError);
+            }
+          }, 100);
+        }
+      }, 50);
+      
       return userData;
     } catch (error) {
-      // Make sure to properly rethrow the error to propagate it to the component
       console.log('Auth context login error:', error);
       throw error;
     } finally {
       setLoading(false);
+      authOperationInProgress.current = false;
     }
-  };
+  }, []);
 
-  // Logout function
-  const logout = async () => {
+  // Logout function - optimized with useCallback
+  const logout = useCallback(async () => {
+    // Set flag to indicate auth operation is in progress
+    authOperationInProgress.current = true;
+    
     try {
       setLoading(true);
       await authService.logout();
+      
+      // Batch state updates to minimize re-renders
       setUser(null);
       setIsAuthenticated(false);
-      router.replace('/'); // Navigate to login
+      
+      // Only navigate after state is updated
+      router.replace('/');
     } finally {
       setLoading(false);
+      // Clear the auth operation flag
+      authOperationInProgress.current = false;
     }
-  };
+  }, []);
 
-  // Update user profile data
-  const updateUser = (userData) => {
+  // Update user profile data - optimized with useCallback
+  const updateUser = useCallback((userData) => {
     setUser(userData);
-  };
+  }, []);
 
-  // Context value
-  const contextValue = {
+  // Context value - memoized to prevent unnecessary context re-renders
+  const contextValue = React.useMemo(() => ({
     isAuthenticated,
     user,
     loading,
     login,
     logout,
     updateUser,
-    checkAuthStatus
-  };
+    checkAuthStatus,
+    authOperationInProgress: authOperationInProgress.current
+  }), [isAuthenticated, user, loading, login, logout, updateUser, checkAuthStatus]);
 
   return (
     <AuthContext.Provider value={contextValue}>
@@ -117,21 +160,43 @@ export const useAuth = () => {
 // HOC to require authentication
 export const withAuth = (Component) => {
   return (props) => {
-    const { isAuthenticated, loading } = useAuth();
+    const { isAuthenticated, loading, user } = useAuth();
+    
+    console.log("withAuth HOC - Auth state:", { 
+      isAuthenticated, 
+      loading, 
+      hasUser: !!user 
+    });
     
     useEffect(() => {
       // If not authenticated and finished loading, redirect to login
       if (!loading && !isAuthenticated) {
+        console.log("withAuth - Not authenticated, redirecting to login");
         router.replace('/');
+      } else if (!loading && isAuthenticated) {
+        console.log("withAuth - User is authenticated, allowing access to protected route");
       }
     }, [isAuthenticated, loading]);
     
-    // If still loading or not authenticated, don't render the component
-    if (loading || !isAuthenticated) {
+    // If still loading, show a loading indicator
+    if (loading) {
+      console.log("withAuth - Still loading auth state");
+      return (
+        <View style={{ flex: 1, justifyContent: 'center', alignItems: 'center' }}>
+          <ActivityIndicator size="large" color="#F7B233" />
+          <Text style={{ marginTop: 10 }}>Loading...</Text>
+        </View>
+      );
+    }
+    
+    // If not authenticated, don't render anything while redirecting
+    if (!isAuthenticated) {
+      console.log("withAuth - Not rendering protected component");
       return null;
     }
     
     // Otherwise, render the protected component
+    console.log("withAuth - Rendering protected component");
     return <Component {...props} />;
   };
 };

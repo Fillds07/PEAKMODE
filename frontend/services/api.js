@@ -70,7 +70,7 @@ let pendingRequests = {};
 const cache = new Map();
 const CACHE_DURATION = 30000; // 30 seconds
 
-// Request interceptor to add auth token
+// Request interceptor to add username for authentication
 api.interceptors.request.use(
   async (config) => {
     try {
@@ -84,10 +84,13 @@ api.interceptors.request.use(
         config.params = { ...config.params, _t: new Date().getTime() };
       }
 
-      // Add auth token
-      const token = await SecureStore.getItemAsync(TOKEN_KEY);
-      if (token) {
-        config.headers.Authorization = `Bearer ${token}`;
+      // Add username to headers for authentication
+      const userJson = await SecureStore.getItemAsync(USER_KEY);
+      if (userJson) {
+        const userData = JSON.parse(userJson);
+        if (userData.username) {
+          config.headers.username = userData.username;
+        }
       }
 
       // Return from cache for GET requests if available and not expired
@@ -136,9 +139,8 @@ api.interceptors.response.use(
   async (error) => {
     const { response, config } = error;
     
-    // Handle token expiration (401 errors) - except during login attempts
+    // Handle authentication errors - except during login attempts
     if (response && response.status === 401 && !config.url.includes('/auth/login')) {
-      await SecureStore.deleteItemAsync(TOKEN_KEY);
       await SecureStore.deleteItemAsync(USER_KEY);
       clearCache();
     }
@@ -158,6 +160,8 @@ export class AuthenticationError extends Error {
     super(message);
     this.name = 'AuthenticationError';
     this.isHandled = true;
+    this.isAuthError = true; // Add a flag to easily identify auth errors
+    this.shouldNotCauseFlash = true; // Special flag to prevent UI flashing
   }
 }
 
@@ -166,45 +170,93 @@ export const authService = {
   // Export API URL for other components to use
   API_URL: API_URL,
   
+  // Track recent auth errors to prevent duplicates causing flashes
+  recentAuthErrors: new Set(),
+  
   // Register a new user
   register: async (userData) => {
     const response = await api.post('/auth/signup', userData);
     return response.data;
   },
 
-  // Login user - optimized for speed
+  // Login user - optimized for speed and smooth transitions
   login: async (credentials) => {
     try {
       // Clear cache on login
       clearCache();
       
+      console.log("API: Login request for user:", credentials.username);
       const response = await api.post('/auth/login', credentials);
-      const { token, data } = response.data;
+      console.log("API: Login response received:", JSON.stringify(response.data));
       
-      // Store token and user data in parallel
-      if (token && data?.user) {
-        await Promise.all([
-          SecureStore.setItemAsync(TOKEN_KEY, token),
-          SecureStore.setItemAsync(USER_KEY, JSON.stringify(data.user))
-        ]);
+      // Add defensive validation
+      if (!response.data) {
+        console.error("API: Login response missing data");
+        throw new Error("Invalid server response");
+      }
+
+      // Updated to match new backend response format without tokens
+      if (!response.data.data || !response.data.data.user) {
+        console.error("API: Login response missing user data");
+        throw new Error("User data missing from response");
       }
       
-      return data.user;
+      const userData = response.data.data.user;
+      console.log("API: Login successful, saving user data");
+      
+      // Store user data
+      await SecureStore.setItemAsync(USER_KEY, JSON.stringify(userData));
+      console.log("API: User data saved successfully");
+      
+      // Clear any recent auth errors on success
+      authService.recentAuthErrors.clear();
+      
+      return userData;
     } catch (error) {
+      // Handle error here
+      // Check if this is a duplicate error that might cause UI flash
+      const errorKey = `${credentials.username}:${error.message || 'generic-error'}`;
+      const isDuplicateError = authService.recentAuthErrors.has(errorKey);
+      
       // Handle specific error cases with user-friendly messages
       if (error.response) {
         const status = error.response.status;
         const errorData = error.response.data;
         
+        let errorMessage = '';
+        let isAuthError = true;
+        
         if (status === 401) {
-          throw new AuthenticationError('Incorrect username or password');
+          errorMessage = 'Incorrect username or password';
         } else if (status === 400) {
-          throw new AuthenticationError(errorData?.message || 'Please enter valid credentials');
+          errorMessage = errorData?.message || 'Please enter valid credentials';
         } else if (status >= 500) {
-          throw new Error('Server error. Please try again later');
+          errorMessage = 'Server error. Please try again later';
+          isAuthError = false;
+          throw new Error(errorMessage);
         } else {
-          throw new Error(errorData?.message || 'Login failed');
+          errorMessage = errorData?.message || 'Login failed';
+          isAuthError = false;
+          throw new Error(errorMessage);
         }
+        
+        // Use AuthenticationError for auth-related errors to prevent flash
+        const authError = new AuthenticationError(errorMessage);
+        
+        // Add additional context for smoother UI handling
+        authError.statusCode = status;
+        authError.isAuthError = true;
+        authError.isDuplicate = isDuplicateError;
+        
+        // Track this error to prevent duplicates causing flashes
+        authService.recentAuthErrors.add(errorKey);
+        
+        // Set a timeout to eventually clean up the error cache
+        setTimeout(() => {
+          authService.recentAuthErrors.delete(errorKey);
+        }, 5000); // 5 second cache
+        
+        throw authError;
       } else if (error.request) {
         throw new Error('Cannot connect to server. Please check your network connection');
       } else {
@@ -219,11 +271,8 @@ export const authService = {
       // Clear cache on logout
       clearCache();
       
-      // Remove tokens in parallel
-      await Promise.all([
-        SecureStore.deleteItemAsync(TOKEN_KEY),
-        SecureStore.deleteItemAsync(USER_KEY)
-      ]);
+      // Remove user data
+      await SecureStore.deleteItemAsync(USER_KEY);
       
       return true;
     } catch (error) {
@@ -232,51 +281,123 @@ export const authService = {
     }
   },
 
-  // Request password reset
-  forgotPassword: async (payload) => {
+  // Get security questions for a user
+  getUserSecurityQuestions: async (username) => {
     try {
-      const response = await api.post('/auth/forgotPassword', payload);
-      return response.data;
+      console.log('Making API request to /auth/get-security-questions with username:', username);
+      // Changed from GET to POST and sending username in the request body
+      const response = await api.post('/auth/get-security-questions', { username });
+      console.log('Raw security questions response:', JSON.stringify(response.data));
+      
+      return {
+        error: false,
+        data: response.data
+      };
     } catch (error) {
+      console.log('API error in getUserSecurityQuestions:', error.message);
       if (error.response) {
-        const errorMessage = error.response.data?.message || 'Failed to request password reset';
-        throw new Error(errorMessage);
-      } else if (error.request) {
-        throw new Error('No response received from server. Please check your network connection.');
-      } else {
-        throw error;
+        console.log('Error response status:', error.response.status);
+        console.log('Error response data:', JSON.stringify(error.response.data));
       }
+      
+      // Instead of logging to console, just return the error in a structured way
+      return {
+        error: true,
+        data: {
+          message: error.response?.data?.message || error.message || 'User not found'
+        }
+      };
     }
   },
 
-  // Reset password with token
-  resetPassword: async (token, password) => {
+  // Verify security answers
+  verifySecurityAnswers: async (data) => {
     try {
-      const cleanToken = token.trim();
-      
-      const response = await api.patch('/auth/resetPassword', { 
-        token: cleanToken, 
-        password 
+      const response = await api.post('/auth/verify-security-answers', data);
+      return {
+        error: false,
+        data: response.data
+      };
+    } catch (error) {
+      // Return error object instead of throwing
+      return {
+        error: true,
+        data: {
+          message: error.response?.data?.message || error.message || 'Failed to verify answers'
+        }
+      };
+    }
+  },
+
+  // Reset password with security verification (no token needed)
+  resetPasswordWithToken: async (username, newPassword) => {
+    try {
+      console.log('Making API request to /auth/reset-password with:', { username, newPassword: '******' });
+      const response = await api.post('/auth/reset-password', {
+        username,
+        newPassword
       });
+      console.log('Raw reset password response:', JSON.stringify(response.data));
       
-      return response.data;
+      return {
+        error: false,
+        data: response.data
+      };
+    } catch (error) {
+      console.log('API error in resetPassword:', error.message);
+      if (error.response) {
+        console.log('Error response status:', error.response.status);
+        console.log('Error response data:', JSON.stringify(error.response.data));
+      }
+      
+      // Return error object instead of throwing
+      return {
+        error: true,
+        data: {
+          message: error.response?.data?.message || error.message || 'Failed to reset password'
+        }
+      };
+    }
+  },
+
+  // Find username by email
+  findUsername: async (data) => {
+    try {
+      console.log('Making API request to /auth/find-username with data:', JSON.stringify(data));
+      const response = await api.post('/auth/find-username', data);
+      console.log('Raw API response:', JSON.stringify(response.data));
+      
+      // If API call is successful, return the response in the expected format
+      return {
+        error: false,
+        data: response.data // This maintains the original format that the components expect
+      };
+    } catch (error) {
+      console.log('API error in findUsername:', error.message);
+      if (error.response) {
+        console.log('Error response status:', error.response.status);
+        console.log('Error response data:', JSON.stringify(error.response.data));
+      }
+      
+      // Return error object instead of throwing
+      return {
+        error: true,
+        data: {
+          message: error.response?.data?.message || error.message || 'No account found with this email'
+        }
+      };
+    }
+  },
+
+  // Request password reset - Now uses security question flow
+  forgotPassword: async (username) => {
+    try {
+      // This is now just a wrapper around getUserSecurityQuestions to maintain compatibility
+      return await authService.getUserSecurityQuestions(username);
     } catch (error) {
       if (error.response) {
-        const status = error.response.status;
-        const errorData = error.response.data;
-        
-        if (status === 400) {
-          // Token validation issues (expired, invalid)
-          const message = errorData?.message || 'Token validation failed';
-          error.tokenExpired = message.includes('expired') || message.includes('invalid');
-          throw error;
-        } else if (status === 401) {
-          throw new Error('Authentication error. Please login again.');
-        } else if (status >= 500) {
-          throw new Error('Server error. Please try again later.');
-        } else {
-          throw new Error(errorData?.message || 'Password reset failed');
-        }
+        const errorMessage = error.response.data?.message || 'Failed to begin password reset';
+        throw new Error(errorMessage);
       } else if (error.request) {
         throw new Error('No response received from server. Please check your network connection.');
       } else {
@@ -287,8 +408,8 @@ export const authService = {
 
   // Check if user is authenticated
   isAuthenticated: async () => {
-    const token = await SecureStore.getItemAsync(TOKEN_KEY);
-    return !!token;
+    const userJson = await SecureStore.getItemAsync(USER_KEY);
+    return !!userJson;
   },
 };
 
@@ -297,7 +418,22 @@ export const userService = {
   // Get current user profile - optimized with caching and fallback
   getProfile: async () => {
     try {
-      const response = await api.get('/users/profile');
+      // Get the current username from storage
+      const userJson = await SecureStore.getItemAsync(USER_KEY);
+      if (!userJson) {
+        throw new Error("User not logged in");
+      }
+      
+      const userData = JSON.parse(userJson);
+      console.log("Getting profile for user:", userData.username);
+      
+      // Include username in query parameters
+      const response = await api.get('/users/profile', {
+        params: { 
+          username: userData.username,
+          _t: Date.now() // Cache busting
+        }
+      });
       
       // Store fresh user data in secure storage as backup
       if (response?.data?.data?.user) {
@@ -330,19 +466,47 @@ export const userService = {
   // Update user profile - optimized to update local cache
   updateProfile: async (profileData) => {
     try {
-      const response = await api.patch('/users/profile', profileData);
-      
-      // Update local cache
-      if (response?.data?.data?.user) {
-        await SecureStore.setItemAsync(USER_KEY, JSON.stringify(response.data.data.user));
+      // Get the current username for the auth header
+      const userJson = await SecureStore.getItemAsync(USER_KEY);
+      if (!userJson) {
+        throw new Error("User not logged in");
       }
       
-      // Clear API cache to ensure fresh data
-      clearCache();
+      const userData = JSON.parse(userJson);
+      const currentUsername = userData.username;
+      
+      console.log('DEBUG: Updating profile with current username in headers:', currentUsername);
+      console.log('DEBUG: Profile data being sent:', JSON.stringify(profileData));
+      
+      // Force username from headers for authentication - crucial for username changes
+      const response = await api.patch('/users/profile', profileData, {
+        headers: {
+          'Content-Type': 'application/json',
+          'username': currentUsername // This ensures we authenticate with current username
+        }
+      });
+      
+      console.log('DEBUG: Profile update response:', JSON.stringify(response.data));
+      
+      // Critical: Update local cache with new user data
+      if (response?.data?.data?.user) {
+        const updatedUser = response.data.data.user;
+        console.log('DEBUG: Updating local storage with new user data:', JSON.stringify(updatedUser));
+        
+        // Save the updated user info to secure storage
+        await SecureStore.setItemAsync(USER_KEY, JSON.stringify(updatedUser));
+        
+        // If username was changed, clear the cache to ensure fresh data on next load
+        if (profileData.username && profileData.username !== currentUsername) {
+          console.log('DEBUG: Username changed - clearing cache');
+          clearCache();
+        }
+      }
       
       return response.data;
     } catch (error) {
-      console.error('Error updating profile:', error);
+      console.error('DEBUG: Error updating profile:', error);
+      console.error('DEBUG: Error details:', error.response?.data || 'No error response data');
       throw error;
     }
   },
@@ -365,17 +529,44 @@ export const userService = {
       
       // Clear all local data
       clearCache();
-      await Promise.all([
-        SecureStore.deleteItemAsync(TOKEN_KEY),
-        SecureStore.deleteItemAsync(USER_KEY)
-      ]);
+      await SecureStore.deleteItemAsync(USER_KEY);
       
       return response.data;
     } catch (error) {
       console.error('Error deleting account:', error);
       throw error;
     }
-  }
+  },
+
+  // Get user's security questions
+  getUserSecurityQuestions: async () => {
+    try {
+      const response = await api.get('/users/security-questions');
+      return {
+        error: false,
+        data: response.data
+      };
+    } catch (error) {
+      console.error('Error getting security questions:', error);
+      return {
+        error: true,
+        data: {
+          message: error.response?.data?.message || 'Failed to fetch security questions'
+        }
+      };
+    }
+  },
+  
+  // Update security questions
+  updateSecurityQuestions: async (data) => {
+    try {
+      const response = await api.post('/users/security-questions', data);
+      return response.data;
+    } catch (error) {
+      console.error('Error updating security questions:', error);
+      throw error;
+    }
+  },
 };
 
 export default api; 

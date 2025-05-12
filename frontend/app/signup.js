@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { 
   StyleSheet, 
   View, 
@@ -10,6 +10,7 @@ import {
   KeyboardAvoidingView,
   Platform,
   Alert,
+  Animated,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { router } from 'expo-router';
@@ -18,6 +19,7 @@ import { authService } from '../services/api';
 import { DismissKeyboardView } from '../services/keyboardUtils';
 import Logo from '../services/logoComponent';
 import { Ionicons } from '@expo/vector-icons';
+import StandardError from '../services/ErrorDisplay';
 
 // PEAKMODE color theme based on logo
 const COLORS = {
@@ -33,12 +35,17 @@ const COLORS = {
   success: '#4CAF50', // Green for success
 }
 
+// Animation constants - subtler animations
+const ANIM_DURATION = 180;
+const STAGGER_DELAY = 30;
+
 export default function SignupScreen() {
   const [fullName, setFullName] = useState('');
   const [email, setEmail] = useState('');
   const [username, setUsername] = useState('');
   const [password, setPassword] = useState('');
   const [confirmPassword, setConfirmPassword] = useState('');
+  const [phone, setPhone] = useState('');
   const [showPassword, setShowPassword] = useState(false);
   const [showConfirmPassword, setShowConfirmPassword] = useState(false);
   
@@ -46,11 +53,98 @@ export default function SignupScreen() {
   const [error, setError] = useState('');
   const [isConnecting, setIsConnecting] = useState(true);
   const [networkError, setNetworkError] = useState(false);
+  
+  // Animation values
+  const fadeAnim = useRef(new Animated.Value(0)).current;
+  const logoAnim = useRef(new Animated.Value(0)).current;
+  const headerAnim = useRef(new Animated.Value(0)).current;
+  const formItemAnims = {
+    fullName: useRef(new Animated.Value(0)).current,
+    email: useRef(new Animated.Value(0)).current,
+    username: useRef(new Animated.Value(0)).current,
+    phone: useRef(new Animated.Value(0)).current,
+    password: useRef(new Animated.Value(0)).current,
+    confirmPassword: useRef(new Animated.Value(0)).current,
+    button: useRef(new Animated.Value(0)).current,
+    divider: useRef(new Animated.Value(0)).current,
+    loginButton: useRef(new Animated.Value(0)).current,
+  };
 
   // Check connectivity when component mounts
   useEffect(() => {
     checkConnectivity();
   }, []);
+  
+  // Start animations when component is ready
+  useEffect(() => {
+    if (!isConnecting) {
+      // Initial fade in
+      Animated.timing(fadeAnim, {
+        toValue: 1,
+        duration: 180,
+        useNativeDriver: true,
+      }).start();
+      
+      // Staggered animations for each element
+      Animated.stagger(STAGGER_DELAY, [
+        Animated.timing(logoAnim, {
+          toValue: 1,
+          duration: ANIM_DURATION,
+          useNativeDriver: true,
+        }),
+        Animated.timing(headerAnim, {
+          toValue: 1,
+          duration: ANIM_DURATION,
+          useNativeDriver: true,
+        }),
+        Animated.timing(formItemAnims.fullName, {
+          toValue: 1,
+          duration: ANIM_DURATION,
+          useNativeDriver: true,
+        }),
+        Animated.timing(formItemAnims.email, {
+          toValue: 1,
+          duration: ANIM_DURATION,
+          useNativeDriver: true,
+        }),
+        Animated.timing(formItemAnims.username, {
+          toValue: 1,
+          duration: ANIM_DURATION,
+          useNativeDriver: true,
+        }),
+        Animated.timing(formItemAnims.phone, {
+          toValue: 1,
+          duration: ANIM_DURATION,
+          useNativeDriver: true,
+        }),
+        Animated.timing(formItemAnims.password, {
+          toValue: 1,
+          duration: ANIM_DURATION,
+          useNativeDriver: true,
+        }),
+        Animated.timing(formItemAnims.confirmPassword, {
+          toValue: 1,
+          duration: ANIM_DURATION,
+          useNativeDriver: true,
+        }),
+        Animated.timing(formItemAnims.button, {
+          toValue: 1,
+          duration: ANIM_DURATION,
+          useNativeDriver: true,
+        }),
+        Animated.timing(formItemAnims.divider, {
+          toValue: 1,
+          duration: ANIM_DURATION,
+          useNativeDriver: true,
+        }),
+        Animated.timing(formItemAnims.loginButton, {
+          toValue: 1,
+          duration: ANIM_DURATION,
+          useNativeDriver: true,
+        }),
+      ]).start();
+    }
+  }, [isConnecting]);
 
   // Function to check backend connectivity
   const checkConnectivity = async () => {
@@ -98,6 +192,12 @@ export default function SignupScreen() {
     return commonProviders.includes(domain);
   };
 
+  const validatePhone = (phone) => {
+    // Basic phone validation - must be at least 10 digits
+    const phoneRegex = /^\d{10,15}$/;
+    return phoneRegex.test(phone.replace(/\D/g, ''));
+  };
+
   const validatePassword = (password) => {
     const minLength = 8;
     const maxLength = 20;
@@ -116,32 +216,64 @@ export default function SignupScreen() {
       
     return isValid;
   };
+  
+  // Button press animation - subtler
+  const animateButtonPress = () => {
+    Animated.sequence([
+      Animated.timing(formItemAnims.button, {
+        toValue: 0.97,
+        duration: 80,
+        useNativeDriver: true,
+      }),
+      Animated.timing(formItemAnims.button, {
+        toValue: 1,
+        duration: 80,
+        useNativeDriver: true,
+      }),
+    ]).start();
+  };
 
   const handleSignup = async () => {
     // Validate input
-    if (!fullName || !email || !username || !password || !confirmPassword) {
-      setError('All fields are required');
+    if (!fullName || !email || !username || !password || !confirmPassword || !phone) {
+      const newError = 'All fields are required';
+      setError(newError);
       return;
     }
 
     if (!validateEmail(email)) {
-      setError('Please use a common email provider (gmail.com, yahoo.com, etc.)');
+      const newError = 'Please use a common email provider (gmail.com, yahoo.com, etc.)';
+      setError(newError);
+      return;
+    }
+
+    if (!validatePhone(phone)) {
+      const newError = 'Please enter a valid phone number (10-15 digits)';
+      setError(newError);
       return;
     }
 
     if (password !== confirmPassword) {
-      setError('Passwords do not match');
+      const newError = 'Passwords do not match';
+      setError(newError);
       return;
     }
 
     if (!validatePassword(password)) {
-      setError('Password must be 8-20 characters and include uppercase, lowercase, number, and special character');
+      const newError = 'Password must be 8-20 characters and include uppercase, lowercase, number, and special character';
+      setError(newError);
       return;
     }
 
     try {
       setLoading(true);
-      setError('');
+      animateButtonPress();
+      
+      // If there's an error, animate its disappearance
+      if (error) {
+        // Let StandardError component handle the animation
+        setError('');
+      }
       
       // First check connectivity
       const connectivityCheck = await connectivityService.checkBackendConnectivity();
@@ -153,13 +285,14 @@ export default function SignupScreen() {
       
       // Call the signup API using authService
       try {
-        console.log('Attempting to register user:', { name: fullName, email, username });
+        console.log('Attempting to register user:', { name: fullName, email, username, phone });
         
         const userData = {
           name: fullName,
           email,
           username,
-          password
+          password,
+          phone
         };
         
         // Use the authService register method
@@ -176,10 +309,21 @@ export default function SignupScreen() {
               // Clear any errors before navigating
               setError('');
               setNetworkError(false);
-              // Navigate to security questions with username as parameter
-              router.replace({
-                pathname: '/security-questions',
-                params: { username }
+              
+              // Animate out before navigation - subtler fade
+              Animated.timing(fadeAnim, {
+                toValue: 0.95,
+                duration: 100,
+                useNativeDriver: true,
+              }).start(() => {
+                // Navigate to security questions with username and userId as parameters
+                router.replace({
+                  pathname: '/security-questions',
+                  params: { 
+                    username: result.data.user.username,
+                    userId: result.data.user.id.toString()
+                  }
+                });
               });
             } 
           }]
@@ -215,7 +359,14 @@ export default function SignupScreen() {
   };
 
   const handleGoBack = () => {
-    router.back();
+    // Animate out before navigation - subtler fade
+    Animated.timing(fadeAnim, {
+      toValue: 0.95,
+      duration: 100,
+      useNativeDriver: true,
+    }).start(() => {
+      router.back();
+    });
   };
 
   // Render loading indicator during initial connectivity check
@@ -239,32 +390,56 @@ export default function SignupScreen() {
           showsVerticalScrollIndicator={false}
         >
           <View style={styles.signupCard}>
-            <View style={styles.logoContainer}>
+            <Animated.View 
+              style={[
+                styles.logoContainer,
+                {
+                  opacity: logoAnim,
+                  transform: [{ translateY: logoAnim.interpolate({
+                    inputRange: [0, 1],
+                    outputRange: [10, 0] // Subtler movement
+                  })}]
+                }
+              ]}
+            >
               <Logo width={220} />
-            </View>
+            </Animated.View>
             
-            <Text style={styles.headerText}>Create Account</Text>
+            <Animated.Text 
+              style={[
+                styles.headerText,
+                {
+                  opacity: headerAnim,
+                  transform: [{ translateY: headerAnim.interpolate({
+                    inputRange: [0, 1],
+                    outputRange: [8, 0] // Subtler movement
+                  })}]
+                }
+              ]}
+            >
+              Create Account
+            </Animated.Text>
             
-            {error && !networkError && (
-              <View style={styles.errorBelowTitle}>
-                <Text style={styles.errorText}>{error}</Text>
-              </View>
-            )}
-            
-            {networkError && (
-              <View style={styles.errorContainer}>
-                <Text style={styles.errorText}>{error}</Text>
-                <TouchableOpacity 
-                  style={styles.retryButton}
-                  onPress={checkConnectivity}
-                >
-                  <Text style={styles.retryText}>Retry Connection</Text>
-                </TouchableOpacity>
-              </View>
-            )}
+            <StandardError 
+              message={error}
+              showRetry={networkError}
+              onRetry={checkConnectivity}
+              style={styles.errorMargin}
+            />
             
             <View style={styles.formContainer}>
-              <View style={styles.inputContainer}>
+              <Animated.View 
+                style={[
+                  styles.inputContainer,
+                  {
+                    opacity: formItemAnims.fullName,
+                    transform: [{ translateY: formItemAnims.fullName.interpolate({
+                      inputRange: [0, 1],
+                      outputRange: [8, 0] // Subtler movement
+                    })}]
+                  }
+                ]}
+              >
                 <Text style={styles.label}>Full Name</Text>
                 <View style={styles.inputWrapper}>
                   <Ionicons name="person-outline" size={20} color={COLORS.textSecondary} style={styles.inputIcon} />
@@ -279,9 +454,20 @@ export default function SignupScreen() {
                     placeholderTextColor={COLORS.textSecondary}
                   />
                 </View>
-              </View>
+              </Animated.View>
               
-              <View style={styles.inputContainer}>
+              <Animated.View 
+                style={[
+                  styles.inputContainer,
+                  {
+                    opacity: formItemAnims.email,
+                    transform: [{ translateY: formItemAnims.email.interpolate({
+                      inputRange: [0, 1],
+                      outputRange: [8, 0] // Subtler movement
+                    })}]
+                  }
+                ]}
+              >
                 <Text style={styles.label}>Email</Text>
                 <View style={styles.inputWrapper}>
                   <Ionicons name="mail-outline" size={20} color={COLORS.textSecondary} style={styles.inputIcon} />
@@ -301,9 +487,51 @@ export default function SignupScreen() {
                 <Text style={styles.hintText}>
                   Please use a common email provider (gmail.com, yahoo.com, etc.)
                 </Text>
-              </View>
+              </Animated.View>
               
-              <View style={styles.inputContainer}>
+              <Animated.View 
+                style={[
+                  styles.inputContainer,
+                  {
+                    opacity: formItemAnims.phone,
+                    transform: [{ translateY: formItemAnims.phone.interpolate({
+                      inputRange: [0, 1],
+                      outputRange: [8, 0] // Subtler movement
+                    })}]
+                  }
+                ]}
+              >
+                <Text style={styles.label}>Phone Number</Text>
+                <View style={styles.inputWrapper}>
+                  <Ionicons name="call-outline" size={20} color={COLORS.textSecondary} style={styles.inputIcon} />
+                  <TextInput
+                    style={styles.input}
+                    placeholder="Enter your phone number"
+                    value={phone}
+                    onChangeText={setPhone}
+                    keyboardType="phone-pad"
+                    autoComplete="off"
+                    textContentType="telephoneNumber"
+                    placeholderTextColor={COLORS.textSecondary}
+                  />
+                </View>
+                <Text style={styles.hintText}>
+                  Please enter a valid phone number (10-15 digits)
+                </Text>
+              </Animated.View>
+              
+              <Animated.View 
+                style={[
+                  styles.inputContainer,
+                  {
+                    opacity: formItemAnims.username,
+                    transform: [{ translateY: formItemAnims.username.interpolate({
+                      inputRange: [0, 1],
+                      outputRange: [8, 0] // Subtler movement
+                    })}]
+                  }
+                ]}
+              >
                 <Text style={styles.label}>Username</Text>
                 <View style={styles.inputWrapper}>
                   <Ionicons name="at-outline" size={20} color={COLORS.textSecondary} style={styles.inputIcon} />
@@ -319,9 +547,20 @@ export default function SignupScreen() {
                     placeholderTextColor={COLORS.textSecondary}
                   />
                 </View>
-              </View>
+              </Animated.View>
               
-              <View style={styles.inputContainer}>
+              <Animated.View 
+                style={[
+                  styles.inputContainer,
+                  {
+                    opacity: formItemAnims.password,
+                    transform: [{ translateY: formItemAnims.password.interpolate({
+                      inputRange: [0, 1],
+                      outputRange: [8, 0] // Subtler movement
+                    })}]
+                  }
+                ]}
+              >
                 <Text style={styles.label}>Password</Text>
                 <View style={styles.passwordContainer}>
                   <Ionicons name="lock-closed-outline" size={20} color={COLORS.textSecondary} style={styles.inputIcon} />
@@ -352,9 +591,20 @@ export default function SignupScreen() {
                 <Text style={styles.hintText}>
                   Password must be 8-20 characters and include uppercase, lowercase, number, and special character.
                 </Text>
-              </View>
+              </Animated.View>
               
-              <View style={styles.inputContainer}>
+              <Animated.View 
+                style={[
+                  styles.inputContainer,
+                  {
+                    opacity: formItemAnims.confirmPassword,
+                    transform: [{ translateY: formItemAnims.confirmPassword.interpolate({
+                      inputRange: [0, 1],
+                      outputRange: [8, 0] // Subtler movement
+                    })}]
+                  }
+                ]}
+              >
                 <Text style={styles.label}>Confirm Password</Text>
                 <View style={styles.passwordContainer}>
                   <Ionicons name="lock-closed-outline" size={20} color={COLORS.textSecondary} style={styles.inputIcon} />
@@ -382,32 +632,65 @@ export default function SignupScreen() {
                     />
                   </TouchableOpacity>
                 </View>
-              </View>
+              </Animated.View>
               
-              <TouchableOpacity
-                style={styles.signupButton}
-                onPress={handleSignup}
-                disabled={loading}
+              <Animated.View
+                style={{
+                  opacity: formItemAnims.button,
+                  transform: [
+                    { translateY: formItemAnims.button.interpolate({
+                      inputRange: [0, 1],
+                      outputRange: [8, 0] // Subtler movement
+                    })},
+                    { scale: formItemAnims.button }
+                  ]
+                }}
               >
-                {loading ? (
-                  <ActivityIndicator color="#FFFFFF" />
-                ) : (
-                  <Text style={styles.signupButtonText}>Create Account</Text>
-                )}
-              </TouchableOpacity>
+                <TouchableOpacity
+                  style={styles.signupButton}
+                  onPress={handleSignup}
+                  disabled={loading}
+                  activeOpacity={0.8}
+                >
+                  {loading ? (
+                    <ActivityIndicator color="#FFFFFF" />
+                  ) : (
+                    <Text style={styles.signupButtonText}>Create Account</Text>
+                  )}
+                </TouchableOpacity>
+              </Animated.View>
               
-              <View style={styles.orContainer}>
+              <Animated.View 
+                style={[
+                  styles.orContainer,
+                  {
+                    opacity: formItemAnims.divider,
+                    transform: [{ scaleX: formItemAnims.divider }]
+                  }
+                ]}
+              >
                 <View style={styles.orLine}></View>
                 <Text style={styles.orText}>OR</Text>
                 <View style={styles.orLine}></View>
-              </View>
+              </Animated.View>
               
-              <TouchableOpacity
-                style={styles.loginButton}
-                onPress={handleGoBack}
+              <Animated.View
+                style={{
+                  opacity: formItemAnims.loginButton,
+                  transform: [{ translateY: formItemAnims.loginButton.interpolate({
+                    inputRange: [0, 1],
+                    outputRange: [5, 0] // Subtler movement
+                  })}]
+                }}
               >
-                <Text style={styles.loginButtonText}>Login Instead</Text>
-              </TouchableOpacity>
+                <TouchableOpacity
+                  style={styles.loginButton}
+                  onPress={handleGoBack}
+                  activeOpacity={0.8}
+                >
+                  <Text style={styles.loginButtonText}>Login Instead</Text>
+                </TouchableOpacity>
+              </Animated.View>
             </View>
           </View>
         </ScrollView>
@@ -514,42 +797,8 @@ const styles = StyleSheet.create({
     color: COLORS.textSecondary,
     marginTop: 4,
   },
-  errorContainer: {
-    backgroundColor: 'rgba(255, 107, 107, 0.1)',
-    padding: 12,
-    borderRadius: 8,
+  errorMargin: {
     marginBottom: 20,
-    borderWidth: 1,
-    borderColor: COLORS.error,
-    width: '100%',
-  },
-  errorText: {
-    color: COLORS.error,
-    textAlign: 'center',
-    fontWeight: 'bold',
-    fontSize: 15,
-  },
-  errorBelowTitle: {
-    marginBottom: 20,
-    paddingVertical: 10,
-    backgroundColor: 'rgba(255, 107, 107, 0.1)',
-    borderWidth: 1,
-    borderColor: COLORS.error,
-    borderRadius: 8,
-    paddingHorizontal: 12,
-    height: 50,
-    width: '100%',
-    justifyContent: 'center',
-  },
-  retryButton: {
-    backgroundColor: '#F0F0F0',
-    padding: 10,
-    borderRadius: 5,
-    alignItems: 'center',
-  },
-  retryText: {
-    color: COLORS.primary,
-    fontWeight: '500',
   },
   signupButton: {
     backgroundColor: COLORS.primary,

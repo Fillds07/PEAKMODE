@@ -1,0 +1,29 @@
+{
+  "expo": {
+    "name": "PEAKMODE",
+    "slug": "peakmode-app",
+    "version": "1.0.0",
+    "orientation": "portrait",
+    "icon": "./assets/images/icononly_transparent_nobuffer.png",
+    "scheme": "peakmode",
+    "userInterfaceStyle": "light",
+    "splash": {
+      "image": "./assets/images/fulllogo_transparent_nobuffer.png",
+      "resizeMode": "contain",
+      "backgroundColor": "#FFFFFF"
+    },
+    "assetBundlePatterns": [
+      "assets/**/*",
+      "**/*"
+    ],
+    "plugins": [
+      "expo-router"
+    ],
+    "experiments": {
+      "typedRoutes": true
+    },
+    "web": {
+      "bundler": "metro"
+    }
+  }
+} 

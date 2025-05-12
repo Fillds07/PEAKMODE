@@ -6,14 +6,27 @@ const { runQuery, getOne, getAll } = require('../models/database');
  */
 exports.getProfile = async (req, res) => {
   try {
-    // User is already attached to request by auth middleware
-    const user = req.user;
+    // Get userId from the authenticated user attached by middleware
+    const userId = req.user.id;
+    
+    // Get complete user data directly from database
+    const user = await getOne(
+      'SELECT id, username, email, name, phone FROM users WHERE id = ?',
+      [userId]
+    );
+    
+    if (!user) {
+      return res.status(404).json({
+        status: 'error',
+        message: 'User not found'
+      });
+    }
     
     // Get user's security question IDs (not answers)
     const securityQuestions = await getAll(`
       SELECT question_id FROM user_security_answers
       WHERE user_id = ?
-    `, [user.id]);
+    `, [userId]);
     
     const hasSecurityQuestions = securityQuestions.length > 0;
     
@@ -41,13 +54,21 @@ exports.getProfile = async (req, res) => {
 exports.updateProfile = async (req, res) => {
   try {
     const userId = req.user.id;
-    const { name, email } = req.body;
+    const { name, email, phone, username } = req.body;
+    
+    console.log('Update profile request received:', {
+      userId,
+      requestBody: req.body,
+      requestHeaders: req.headers,
+      currentUser: req.user
+    });
     
     // Basic validation
-    if (!name && !email) {
+    if (!name && !email && !phone && !username) {
+      console.log('No fields to update provided');
       return res.status(400).json({
         status: 'error',
-        message: 'At least one field (name or email) is required'
+        message: 'At least one field (name, email, phone, or username) is required'
       });
     }
     
@@ -59,6 +80,7 @@ exports.updateProfile = async (req, res) => {
       );
       
       if (existingUser) {
+        console.log('Email already in use:', email);
         return res.status(400).json({
           status: 'error',
           message: 'Email is already registered'
@@ -66,31 +88,83 @@ exports.updateProfile = async (req, res) => {
       }
     }
     
+    // Check if username is already in use (by another user)
+    if (username) {
+      const existingUser = await getOne(
+        'SELECT id FROM users WHERE username = ? AND id != ?',
+        [username, userId]
+      );
+      
+      if (existingUser) {
+        console.log('Username already taken:', username);
+        return res.status(400).json({
+          status: 'error',
+          message: 'Username is already taken'
+        });
+      }
+    }
+    
     // Prepare update query based on provided fields
-    let updateQuery = 'UPDATE users SET updated_at = CURRENT_TIMESTAMP';
+    let updateFields = [];
     const params = [];
     
     if (name) {
-      updateQuery += ', name = ?';
+      updateFields.push('name = ?');
       params.push(name);
     }
     
     if (email) {
-      updateQuery += ', email = ?';
+      updateFields.push('email = ?');
       params.push(email);
     }
     
-    updateQuery += ' WHERE id = ?';
+    if (phone) {
+      updateFields.push('phone = ?');
+      params.push(phone);
+    }
+    
+    if (username) {
+      updateFields.push('username = ?');
+      params.push(username);
+    }
+    
+    // Only update if we have fields to update
+    if (updateFields.length === 0) {
+      console.log('No fields to update after validation');
+      return res.status(400).json({
+        status: 'error',
+        message: 'No fields to update'
+      });
+    }
+    
+    // Create update query without timestamp
+    const updateQuery = `UPDATE users SET ${updateFields.join(', ')} WHERE id = ?`;
     params.push(userId);
+    
+    console.log('Updating user profile:', { 
+      userId,
+      updateFields, 
+      params,
+      query: updateQuery
+    });
     
     // Update user
     await runQuery(updateQuery, params);
     
     // Get updated user
     const updatedUser = await getOne(
-      'SELECT id, username, email, name FROM users WHERE id = ?',
+      'SELECT id, username, email, name, phone FROM users WHERE id = ?',
       [userId]
     );
+    
+    console.log('User profile updated successfully:', updatedUser);
+    
+    // If username was changed, update it in the token
+    if (username) {
+      // Set the new username in the user object so it's reflected in subsequent requests
+      req.user.username = username;
+      console.log('Updated username in request object:', req.user.username);
+    }
     
     res.status(200).json({
       status: 'success',
@@ -144,10 +218,22 @@ exports.changePassword = async (req, res) => {
     const hashedPassword = await bcrypt.hash(newPassword, salt);
     
     // Update password
-    await runQuery(
-      'UPDATE users SET password = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?',
-      [hashedPassword, userId]
-    );
+    try {
+      // First try with timestamp
+      await runQuery(
+        'UPDATE users SET password = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?',
+        [hashedPassword, userId]
+      );
+      console.log(`Password successfully changed for user ID: ${userId}`);
+    } catch (dbError) {
+      // If updated_at column doesn't exist, try without it
+      console.log('Error updating with timestamp, trying without updated_at column');
+      await runQuery(
+        'UPDATE users SET password = ? WHERE id = ?',
+        [hashedPassword, userId]
+      );
+      console.log(`Password successfully changed for user ID: ${userId} (without timestamp)`);
+    }
     
     res.status(200).json({
       status: 'success',

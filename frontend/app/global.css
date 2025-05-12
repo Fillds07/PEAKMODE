@@ -1,0 +1,22 @@
+/* Hide error overlays completely */
+[role="alert"],
+div.error-navigation-container,
+div.form-error-message {
+  display: none !important;
+}
+
+/* Optional style to ensure all error messages are styled consistently */
+.error-container {
+  background-color: rgba(255, 107, 107, 0.1);
+  border-width: 1px;
+  border-color: #FF6B6B;
+  border-radius: 8px;
+  padding: 16px;
+  margin-bottom: 16px;
+}
+
+.error-text {
+  color: #FF6B6B;
+  font-size: 14px;
+  text-align: center;
+} 

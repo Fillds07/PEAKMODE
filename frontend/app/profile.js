@@ -12,7 +12,9 @@ import {
   KeyboardAvoidingView,
   Platform,
   RefreshControl,
-  ToastAndroid
+  ToastAndroid,
+  FlatList,
+  Pressable
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { router } from 'expo-router';
@@ -21,6 +23,7 @@ import * as SecureStore from 'expo-secure-store';
 import { Ionicons } from '@expo/vector-icons';
 import { useAuth } from '../services/authContext';
 import { withAuth } from '../services/authContext';
+import { Picker } from '@react-native-picker/picker';
 
 // PEAKMODE color theme based on logo
 const COLORS = {
@@ -64,6 +67,17 @@ function ProfileScreen() {
 
   // Security Questions Modal
   const [securityQuestionsVisible, setSecurityQuestionsVisible] = useState(false);
+  const [allSecurityQuestions, setAllSecurityQuestions] = useState([]);
+  const [securityQuestions, setSecurityQuestions] = useState([]);
+  const [securityAnswers, setSecurityAnswers] = useState({});
+  const [selectedQuestions, setSelectedQuestions] = useState([
+    { id: null, question: 'Select a security question', answer: '' },
+    { id: null, question: 'Select a security question', answer: '' },
+    { id: null, question: 'Select a security question', answer: '' }
+  ]);
+  const [loadingQuestions, setLoadingQuestions] = useState(false);
+  const [savingQuestions, setSavingQuestions] = useState(false);
+  const [securityError, setSecurityError] = useState('');
 
   const { logout } = useAuth();
 
@@ -92,10 +106,12 @@ function ProfileScreen() {
   // Immediately load profile data from SecureStore first, then refresh with API
   useEffect(() => {
     async function loadInitialData() {
+      console.log("Profile page - loadInitialData started");
       try {
         // First try to load from SecureStore for instant display
         const userJson = await SecureStore.getItemAsync('peakmode_user');
         if (userJson) {
+          console.log("Profile page - Found cached user data");
           const userData = JSON.parse(userJson);
           setUserData(userData);
           
@@ -112,18 +128,23 @@ function ProfileScreen() {
         console.error('Error loading cached user data:', e);
       }
       
-      // Check authentication status
+      // Check authentication status but SKIP redirection if not authenticated
+      // The withAuth HOC will handle redirections
       const isAuthenticated = await authService.isAuthenticated();
-      if (!isAuthenticated) {
-        router.replace('/');
-        return;
-      }
+      console.log("Profile page - Authentication check:", isAuthenticated);
       
-      // Fetch fresh data from API
+      // Fetch fresh data from API regardless of auth status
+      // The withAuth HOC will prevent this component from rendering if not authenticated
       fetchUserProfile();
     }
     
     loadInitialData();
+    console.log("Profile page - Initial render complete");
+    
+    // Return cleanup function
+    return () => {
+      console.log("Profile page - Unmounting");
+    };
   }, []);
 
   // Fetch user profile with better error handling and caching
@@ -207,7 +228,7 @@ function ProfileScreen() {
 
   // Helper for validating phone
   const isValidPhone = (phone) => {
-    if (!phone) return true; // Phone is optional
+    if (!phone) return false; // Phone is required now
     return phone.length >= 10;
   };
 
@@ -251,11 +272,18 @@ function ProfileScreen() {
         return;
       }
       
+      if (!editUsername.trim()) {
+        setEditError('Username cannot be empty');
+        setEditLoading(false);
+        return;
+      }
+      
       // Prepare update data
       const updateData = {
         name: editName.trim(),
         email: editEmail.trim(),
-        phone: editPhone.trim()
+        phone: editPhone.trim(),
+        username: editUsername.trim()
       };
       
       // Only submit data that has changed
@@ -273,12 +301,23 @@ function ProfileScreen() {
         return;
       }
       
+      console.log('Saving profile changes:', changedData);
+      
       const response = await userService.updateProfile(changedData);
       
       if (response?.data?.user) {
         // Update local state with fresh data
         setUserData(response.data.user);
         handleCloseEditProfile();
+        
+        // If username changed, we need to reload the page or re-authenticate
+        if (changedData.username) {
+          console.log('Username changed, will reload profile');
+          // Force a small delay to let the server process the change
+          setTimeout(() => {
+            fetchUserProfile(true);
+          }, 500);
+        }
         
         // Show success message
         if (Platform.OS === 'android') {
@@ -294,8 +333,8 @@ function ProfileScreen() {
       
       // Extract error message
       const errorMessage = error.response?.data?.message || 
-                           error.message || 
-                           'Failed to update profile';
+                          error.message || 
+                          'Failed to update profile';
       
       setEditError(errorMessage);
     } finally {
@@ -401,22 +440,6 @@ function ProfileScreen() {
     }
   };
 
-  // Add a section for security question management in the profile page
-  const renderSecurityQuestionsSection = () => {
-    return (
-      <View style={styles.section}>
-        <Text style={styles.sectionTitle}>Security Questions</Text>
-        <TouchableOpacity
-          style={styles.optionButton}
-          onPress={() => setSecurityQuestionsVisible(true)}
-        >
-          <Text style={styles.optionText}>Manage Security Questions</Text>
-          <Ionicons name="chevron-forward" size={20} color={COLORS.textSecondary} />
-        </TouchableOpacity>
-      </View>
-    );
-  };
-
   // Modify logout function to use auth context
   const handleLogout = async () => {
     try {
@@ -471,6 +494,138 @@ function ProfileScreen() {
   const getInitial = () => {
     if (!userData || !userData.name) return '?';
     return userData.name.charAt(0).toUpperCase();
+  };
+
+  // Fetch security questions for the user
+  const fetchSecurityQuestions = async () => {
+    try {
+      setLoadingQuestions(true);
+      setSecurityError('');
+      
+      // Get all available questions
+      const allQuestionsResponse = await authService.getUserSecurityQuestions(userData.username);
+      
+      if (allQuestionsResponse.error) {
+        setSecurityError(allQuestionsResponse.data.message || 'Error fetching security questions');
+        return;
+      }
+      
+      setSecurityQuestions(allQuestionsResponse.data.data.questions || []);
+      
+      // Get user's selected questions if they have any
+      const userQuestionsResponse = await userService.getUserSecurityQuestions();
+      
+      if (!userQuestionsResponse.error && userQuestionsResponse.data.data.questions) {
+        // Set selected questions and their answers
+        const userQuestions = userQuestionsResponse.data.data.questions;
+        setSelectedQuestions(userQuestions);
+        
+        // Create a map of question IDs to answers
+        const answers = {};
+        userQuestions.forEach(q => {
+          if (q.id && q.answer) {
+            answers[q.id] = q.answer;
+          }
+        });
+        
+        setSecurityAnswers(answers);
+      }
+    } catch (error) {
+      console.error('Error fetching security questions:', error);
+      setSecurityError('Failed to load security questions. Please try again.');
+    } finally {
+      setLoadingQuestions(false);
+    }
+  };
+  
+  // Handle opening security questions modal
+  const handleOpenSecurityQuestions = () => {
+    fetchSecurityQuestions();
+    setSecurityQuestionsVisible(true);
+  };
+  
+  // Handle closing security questions modal
+  const handleCloseSecurityQuestions = () => {
+    setSecurityQuestionsVisible(false);
+    setSecurityError('');
+  };
+  
+  // Handle answer change
+  const handleAnswerChange = (index, answer) => {
+    const updatedQuestions = [...selectedQuestions];
+    updatedQuestions[index].answer = answer;
+    setSelectedQuestions(updatedQuestions);
+  };
+  
+  // Handle question selection
+  const handleQuestionSelect = (index, questionId) => {
+    const question = securityQuestions.find(q => q.id === questionId);
+    
+    if (!question) return;
+    
+    const updatedQuestions = [...selectedQuestions];
+    updatedQuestions[index] = {
+      ...updatedQuestions[index],
+      id: question.id,
+      question: question.question
+    };
+    
+    setSelectedQuestions(updatedQuestions);
+  };
+  
+  // Save security questions and answers
+  const handleSaveSecurityQuestions = async () => {
+    try {
+      setSavingQuestions(true);
+      setSecurityError('');
+      
+      // Validate - all questions must be selected
+      const allQuestionsSelected = selectedQuestions.every(q => q.id !== null);
+      
+      if (!allQuestionsSelected) {
+        setSecurityError('Please select all 3 security questions.');
+        setSavingQuestions(false);
+        return;
+      }
+      
+      // Check if all selected questions have answers
+      const allAnswersProvided = selectedQuestions.every(q => 
+        q.answer && q.answer.trim().length > 0
+      );
+      
+      if (!allAnswersProvided) {
+        setSecurityError('Please provide answers for all security questions.');
+        setSavingQuestions(false);
+        return;
+      }
+      
+      // Format data for API
+      const answers = selectedQuestions.map(q => ({
+        questionId: q.id,
+        answer: q.answer
+      }));
+      
+      // Save answers
+      const response = await userService.updateSecurityQuestions({ answers });
+      
+      if (response.status === 'success') {
+        handleCloseSecurityQuestions();
+        
+        // Show success message
+        if (Platform.OS === 'android') {
+          ToastAndroid.show('Security questions updated successfully', ToastAndroid.SHORT);
+        } else {
+          Alert.alert('Success', 'Security questions updated successfully');
+        }
+      } else {
+        setSecurityError('Failed to update security questions. Please try again.');
+      }
+    } catch (error) {
+      console.error('Error saving security questions:', error);
+      setSecurityError('Failed to update security questions. Please try again.');
+    } finally {
+      setSavingQuestions(false);
+    }
   };
 
   // Main render function
@@ -537,20 +692,6 @@ function ProfileScreen() {
                 </Text>
               </View>
               
-              <View style={styles.profileItem}>
-                <Ionicons name="person-outline" size={20} color={COLORS.primary} />
-                <Text style={styles.profileLabel}>Role:</Text>
-                <Text style={styles.profileValue}>
-                  {userData?.role ? userData.role.charAt(0).toUpperCase() + userData.role.slice(1) : 'User'}
-                </Text>
-              </View>
-              
-              <View style={styles.profileItem}>
-                <Ionicons name="calendar-outline" size={20} color={COLORS.primary} />
-                <Text style={styles.profileLabel}>Joined:</Text>
-                <Text style={styles.profileValue}>{userData?.createdAt ? formatDate(userData.createdAt) : 'Unknown'}</Text>
-              </View>
-              
               <TouchableOpacity 
                 style={styles.editButton}
                 onPress={handleOpenEditProfile}
@@ -560,7 +701,7 @@ function ProfileScreen() {
               </TouchableOpacity>
             </View>
             
-            {/* Account management section */}
+            {/* Account Management section */}
             <View style={styles.card}>
               <Text style={styles.sectionTitle}>Account Management</Text>
               
@@ -570,6 +711,15 @@ function ProfileScreen() {
               >
                 <Ionicons name="lock-closed-outline" size={24} color={COLORS.text} />
                 <Text style={styles.accountButtonText}>Change Password</Text>
+                <Ionicons name="chevron-forward" size={24} color={COLORS.textSecondary} />
+              </TouchableOpacity>
+              
+              <TouchableOpacity 
+                style={styles.accountButton}
+                onPress={handleOpenSecurityQuestions}
+              >
+                <Ionicons name="shield-checkmark-outline" size={24} color={COLORS.text} />
+                <Text style={styles.accountButtonText}>Manage Security Questions</Text>
                 <Ionicons name="chevron-forward" size={24} color={COLORS.textSecondary} />
               </TouchableOpacity>
               
@@ -591,8 +741,6 @@ function ProfileScreen() {
                 <Ionicons name="chevron-forward" size={24} color={COLORS.textSecondary} />
               </TouchableOpacity>
             </View>
-            
-            {renderSecurityQuestionsSection()}
           </>
         )}
       </ScrollView>
@@ -643,7 +791,7 @@ function ProfileScreen() {
             </View>
             
             <View style={styles.formGroup}>
-              <Text style={styles.label}>Phone (optional)</Text>
+              <Text style={styles.label}>Phone</Text>
               <TextInput
                 style={styles.input}
                 value={editPhone}
@@ -656,11 +804,12 @@ function ProfileScreen() {
             <View style={styles.formGroup}>
               <Text style={styles.label}>Username</Text>
               <TextInput
-                style={[styles.input, { backgroundColor: '#e0e0e0' }]}
+                style={styles.input}
                 value={editUsername}
-                editable={false}
+                onChangeText={setEditUsername}
+                placeholder="Your username"
+                autoCapitalize="none"
               />
-              <Text style={styles.helperText}>Username cannot be changed</Text>
             </View>
             
             <TouchableOpacity 
@@ -787,6 +936,134 @@ function ProfileScreen() {
                 <>
                   <Ionicons name="save-outline" size={20} color="#FFFFFF" />
                   <Text style={styles.saveButtonText}>Change Password</Text>
+                </>
+              )}
+            </TouchableOpacity>
+          </View>
+        </KeyboardAvoidingView>
+      </Modal>
+      
+      {/* Security Questions Modal */}
+      <Modal
+        visible={securityQuestionsVisible}
+        animationType="slide"
+        transparent={true}
+      >
+        <KeyboardAvoidingView
+          behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+          style={styles.modalContainer}
+        >
+          <View style={styles.modalContent}>
+            <View style={styles.modalHeader}>
+              <Text style={styles.modalTitle}>Security Questions</Text>
+              <TouchableOpacity onPress={handleCloseSecurityQuestions}>
+                <Ionicons name="close" size={24} color={COLORS.text} />
+              </TouchableOpacity>
+            </View>
+            
+            {securityError ? (
+              <Text style={styles.modalError}>{securityError}</Text>
+            ) : null}
+            
+            <Text style={styles.modalDescription}>
+              Select 3 security questions and provide answers. These will be used to reset your password if needed.
+            </Text>
+            
+            {loadingQuestions ? (
+              <View style={styles.loadingContainer}>
+                <ActivityIndicator size="large" color={COLORS.primary} />
+                <Text style={styles.loadingText}>Loading security questions...</Text>
+              </View>
+            ) : (
+              <ScrollView style={styles.questionsContainer}>
+                {/* Question 1 */}
+                <View style={styles.questionSection}>
+                  <Text style={styles.questionNumber}>Question 1</Text>
+                  <View style={styles.pickerWrapper}>
+                    <Picker
+                      selectedValue={selectedQuestions[0]?.id}
+                      onValueChange={(itemValue) => handleQuestionSelect(0, itemValue)}
+                      style={styles.picker}
+                    >
+                      <Picker.Item label="Select a security question" value={null} />
+                      {securityQuestions.map(q => (
+                        <Picker.Item key={q.id} label={q.question} value={q.id} />
+                      ))}
+                    </Picker>
+                  </View>
+                  
+                  <Text style={styles.answerLabel}>Answer</Text>
+                  <TextInput
+                    style={styles.answerInput}
+                    placeholder="Your answer"
+                    value={selectedQuestions[0]?.answer || ''}
+                    onChangeText={(text) => handleAnswerChange(0, text)}
+                  />
+                </View>
+                
+                {/* Question 2 */}
+                <View style={styles.questionSection}>
+                  <Text style={styles.questionNumber}>Question 2</Text>
+                  <View style={styles.pickerWrapper}>
+                    <Picker
+                      selectedValue={selectedQuestions[1]?.id}
+                      onValueChange={(itemValue) => handleQuestionSelect(1, itemValue)}
+                      style={styles.picker}
+                    >
+                      <Picker.Item label="Select a security question" value={null} />
+                      {securityQuestions.map(q => (
+                        <Picker.Item key={q.id} label={q.question} value={q.id} />
+                      ))}
+                    </Picker>
+                  </View>
+                  
+                  <Text style={styles.answerLabel}>Answer</Text>
+                  <TextInput
+                    style={styles.answerInput}
+                    placeholder="Your answer"
+                    value={selectedQuestions[1]?.answer || ''}
+                    onChangeText={(text) => handleAnswerChange(1, text)}
+                  />
+                </View>
+                
+                {/* Question 3 */}
+                <View style={styles.questionSection}>
+                  <Text style={styles.questionNumber}>Question 3</Text>
+                  <View style={styles.pickerWrapper}>
+                    <Picker
+                      selectedValue={selectedQuestions[2]?.id}
+                      onValueChange={(itemValue) => handleQuestionSelect(2, itemValue)}
+                      style={styles.picker}
+                    >
+                      <Picker.Item label="Select a security question" value={null} />
+                      {securityQuestions.map(q => (
+                        <Picker.Item key={q.id} label={q.question} value={q.id} />
+                      ))}
+                    </Picker>
+                  </View>
+                  
+                  <Text style={styles.answerLabel}>Answer</Text>
+                  <TextInput
+                    style={styles.answerInput}
+                    placeholder="Your answer"
+                    value={selectedQuestions[2]?.answer || ''}
+                    onChangeText={(text) => handleAnswerChange(2, text)}
+                  />
+                </View>
+              </ScrollView>
+            )}
+            
+            <TouchableOpacity 
+              style={styles.saveButton}
+              onPress={handleSaveSecurityQuestions}
+              disabled={loadingQuestions || savingQuestions}
+            >
+              {savingQuestions ? (
+                <ActivityIndicator size="small" color="#FFFFFF" />
+              ) : (
+                <>
+                  <Ionicons name="save-outline" size={20} color="#FFFFFF" />
+                  <Text style={styles.saveButtonText}>Save Security Questions</Text>
                 </>
               )}
             </TouchableOpacity>
@@ -1051,5 +1328,50 @@ const styles = StyleSheet.create({
     fontWeight: 'bold',
     fontSize: 16,
     marginLeft: 8,
+  },
+  
+  modalDescription: {
+    fontSize: 16,
+    color: COLORS.text,
+    marginBottom: 16,
+  },
+  
+  questionsContainer: {
+    maxHeight: '60%',
+  },
+  questionSection: {
+    marginBottom: 24,
+  },
+  questionNumber: {
+    fontSize: 18,
+    fontWeight: 'bold',
+    color: COLORS.text,
+    marginBottom: 12,
+  },
+  pickerWrapper: {
+    borderWidth: 1,
+    borderColor: COLORS.border,
+    borderRadius: 8,
+    backgroundColor: COLORS.inputBg,
+    marginBottom: 16,
+    overflow: 'hidden',
+  },
+  picker: {
+    height: 50,
+    width: '100%',
+  },
+  answerLabel: {
+    fontSize: 16,
+    fontWeight: 'bold',
+    color: COLORS.text,
+    marginBottom: 8,
+  },
+  answerInput: {
+    backgroundColor: COLORS.inputBg,
+    padding: 12,
+    borderRadius: 8,
+    fontSize: 16,
+    borderWidth: 1,
+    borderColor: COLORS.border,
   },
 }); 

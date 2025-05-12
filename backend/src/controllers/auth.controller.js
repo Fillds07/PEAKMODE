@@ -15,13 +15,13 @@ const resetSessions = new Map();
  */
 exports.signup = async (req, res) => {
   try {
-    const { username, email, password, name } = req.body;
+    const { username, email, password, name, phone } = req.body;
     
     // Basic validation
-    if (!username || !email || !password || !name) {
+    if (!username || !email || !password || !name || !phone) {
       return res.status(400).json({
         status: 'error',
-        message: 'All fields are required (username, email, password, name)'
+        message: 'All fields are required (username, email, password, name, phone)'
       });
     }
     
@@ -53,8 +53,8 @@ exports.signup = async (req, res) => {
     
     // Create user
     const result = await runQuery(
-      'INSERT INTO users (username, email, name, password) VALUES (?, ?, ?, ?)',
-      [username, email, name, hashedPassword]
+      'INSERT INTO users (username, email, name, phone, password) VALUES (?, ?, ?, ?, ?)',
+      [username, email, name, phone, hashedPassword]
     );
     
     // Generate JWT token
@@ -115,22 +115,15 @@ exports.login = async (req, res) => {
       });
     }
     
-    // Generate JWT token
-    const token = jwt.sign(
-      { id: user.id, username: user.username },
-      JWT_SECRET,
-      { expiresIn: JWT_EXPIRES_IN }
-    );
-    
     // Remove password from response
     const { password: userPassword, ...userData } = user;
     
+    // No longer generating JWT token - just return user data
     res.status(200).json({
       status: 'success',
       message: 'Login successful',
       data: {
-        user: userData,
-        token
+        user: userData
       }
     });
   } catch (error) {
@@ -405,58 +398,69 @@ exports.verifySecurityAnswers = async (req, res) => {
 };
 
 /**
- * Reset password with token from security questions flow
+ * Reset password with security verification
  */
 exports.resetPassword = async (req, res) => {
   try {
-    const { resetToken, password } = req.body;
+    const { username, newPassword } = req.body;
+    console.log('Received password reset request for username:', username);
     
     // Basic validation
-    if (!resetToken || !password) {
+    if (!username || !newPassword) {
+      console.log('Missing required parameters:', { username: !!username, newPassword: !!newPassword });
       return res.status(400).json({
         status: 'error',
-        message: 'Reset token and new password are required'
+        message: 'Username and new password are required'
       });
     }
     
-    // Verify reset token
-    const session = resetSessions.get(resetToken);
+    // Find user
+    const user = await getOne('SELECT id FROM users WHERE username = ?', [username]);
     
-    if (!session) {
-      return res.status(401).json({
+    if (!user) {
+      console.log('User not found for password reset:', username);
+      return res.status(404).json({
         status: 'error',
-        message: 'Invalid or expired reset token'
+        message: 'User not found'
       });
     }
     
-    // Check if token is expired
-    if (session.expiresAt < Date.now()) {
-      // Remove expired token
-      resetSessions.delete(resetToken);
+    console.log('User found for password reset. User ID:', user.id);
+    
+    try {
+      // Hash new password
+      const salt = await bcrypt.genSalt(10);
+      const hashedPassword = await bcrypt.hash(newPassword, salt);
       
-      return res.status(401).json({
+      console.log(`Updating password for user ${username} (ID: ${user.id})`);
+      
+      // Update user password - try without updated_at since column doesn't exist anymore
+      try {
+        const updateResult = await runQuery(
+          'UPDATE users SET password = ? WHERE id = ?',
+          [hashedPassword, user.id]
+        );
+        console.log('Password update result:', updateResult);
+        console.log(`Password successfully reset for user ${username}`);
+      } catch (dbError) {
+        console.error('Database error during password reset:', dbError);
+        res.status(500).json({
+          status: 'error',
+          message: 'Database error while resetting password'
+        });
+      }
+      
+      res.status(200).json({
+        status: 'success',
+        message: 'Password reset successful'
+      });
+    } catch (dbError) {
+      console.error('Database error during password reset:', dbError);
+      res.status(500).json({
         status: 'error',
-        message: 'Reset token has expired'
+        message: 'Database error while resetting password'
       });
     }
-    
-    // Hash new password
-    const salt = await bcrypt.genSalt(10);
-    const hashedPassword = await bcrypt.hash(password, salt);
-    
-    // Update user password
-    await runQuery(
-      'UPDATE users SET password = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?',
-      [hashedPassword, session.userId]
-    );
-    
-    // Remove used token
-    resetSessions.delete(resetToken);
-    
-    res.status(200).json({
-      status: 'success',
-      message: 'Password reset successful'
-    });
   } catch (error) {
     console.error('Error resetting password:', error);
     res.status(500).json({

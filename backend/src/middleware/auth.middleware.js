@@ -1,29 +1,21 @@
-const jwt = require('jsonwebtoken');
 const { getOne } = require('../models/database');
 
-// JWT secret key
-const JWT_SECRET = process.env.JWT_SECRET || 'peakmode-secret-key';
-
-// Authentication middleware
+// Authentication middleware - No longer using tokens
 const authMiddleware = async (req, res, next) => {
   try {
-    // Get token from authorization header
-    const authHeader = req.headers.authorization;
+    // Get username from headers, query, or body - in that order of priority
+    // This ensures that when updating username in the body, we still authenticate with the current username in headers
+    const username = req.headers.username || req.query.username || req.body.username;
     
-    if (!authHeader || !authHeader.startsWith('Bearer ')) {
+    if (!username) {
       return res.status(401).json({
         status: 'error',
-        message: 'Unauthorized - No token provided'
+        message: 'Unauthorized - No username provided'
       });
     }
     
-    const token = authHeader.split(' ')[1];
-    
-    // Verify token
-    const decoded = jwt.verify(token, JWT_SECRET);
-    
     // Check if user exists in database
-    const user = await getOne('SELECT id, username, email, name FROM users WHERE id = ?', [decoded.id]);
+    const user = await getOne('SELECT id, username, email, name, phone FROM users WHERE username = ?', [username]);
     
     if (!user) {
       return res.status(401).json({
@@ -36,13 +28,6 @@ const authMiddleware = async (req, res, next) => {
     req.user = user;
     next();
   } catch (error) {
-    if (error.name === 'JsonWebTokenError' || error.name === 'TokenExpiredError') {
-      return res.status(401).json({
-        status: 'error',
-        message: 'Unauthorized - Invalid token'
-      });
-    }
-    
     return res.status(500).json({
       status: 'error',
       message: 'Internal server error during authentication'

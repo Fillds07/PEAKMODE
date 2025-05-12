@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef, useMemo, useCallback, memo } from 'react';
 import { 
   StyleSheet, 
   View, 
@@ -9,16 +9,20 @@ import {
   Alert,
   Image,
   KeyboardAvoidingView,
-  Platform
+  Platform,
+  Animated,
+  Easing
 } from 'react-native';
-import { router, useFocusEffect } from 'expo-router';
+import { router, useFocusEffect, useLocalSearchParams } from 'expo-router';
 import { authService, AuthenticationError } from '../services/api';
 import connectivityService from '../services/connectivity';
 import { DismissKeyboardView } from '../services/keyboardUtils';
 import Logo from '../services/logoComponent';
-import { useAuth } from '../services/authContext';
+import { useAuth, AuthProvider } from '../services/authContext';
 import { Ionicons } from '@expo/vector-icons';
 import AsyncStorage from '@react-native-async-storage/async-storage';
+import StandardError from '../services/ErrorDisplay';
+import TransitionWrapper, { SlideTransition } from '../services/TransitionWrapper';
 
 // PEAKMODE color theme based on logo
 const COLORS = {
@@ -40,18 +44,170 @@ const USERNAME_STORAGE_KEY = '@peakmode_username';
 const IS_NEW_SESSION_KEY = '@peakmode_is_new_session';
 const PAGE_NAVIGATION_FLAG = '@peakmode_navigation_flag';
 
-export default function Index() {
+// Constants for animation timing - optimized for smooth transitions
+const STAGGER_DELAY = 40; // Reduced from 50ms for faster sequential animations
+const INPUT_TIMING = 220; // Consistent timing for all elements
+
+// Persistent error component that stays mounted
+const PersistentError = memo(({ error, isNetworkError, checkConnectivity }) => {
+  return (
+    <View style={styles.errorContainer}>
+      <StandardError 
+        message={error}
+        showRetry={isNetworkError}
+        onRetry={checkConnectivity}
+        style={styles.errorMargin}
+      />
+    </View>
+  );
+}, (prevProps, nextProps) => {
+  // Custom comparison to prevent unnecessary rerenders
+  return prevProps.error === nextProps.error && 
+         prevProps.isNetworkError === nextProps.isNetworkError;
+});
+
+// Mock auth hook for when the real one is not available
+const useAuthFallback = () => {
+  // This provides a safe fallback implementation that won't crash
+  return {
+    login: async () => {
+      console.log('Using fallback auth - no real authentication will happen');
+      throw new Error('Authentication context not available');
+    },
+    isAuthenticated: false,
+    loading: false,
+    user: null,
+  };
+};
+
+// Actual login screen component
+function LoginScreen() {
+  // Get URL parameters
+  const params = useLocalSearchParams();
+  
   // State
   const [username, setUsername] = useState('');
   const [password, setPassword] = useState('');
   const [showPassword, setShowPassword] = useState(false);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
+  const [successMessage, setSuccessMessage] = useState('');
   const [checkingConnection, setCheckingConnection] = useState(true);
   const [isInitialized, setIsInitialized] = useState(false);
+  const [isNetworkError, setIsNetworkError] = useState(false);
   
-  // Auth context
-  const { login: authLogin } = useAuth();
+  // Add a ref to track if component is mounted to prevent setState after unmount
+  const isMountedRef = useRef(true);
+  const hasAttemptedLoginRef = useRef(false);
+  
+  // Animation refs - subtle animations
+  const fadeAnim = useRef(new Animated.Value(0)).current;
+  const logoAnim = useRef(new Animated.Value(0)).current;
+  const usernameAnim = useRef(new Animated.Value(0)).current;
+  const passwordAnim = useRef(new Animated.Value(0)).current;
+  const buttonAnim = useRef(new Animated.Value(0)).current;
+  const dividerAnim = useRef(new Animated.Value(0)).current;
+  const createAccountAnim = useRef(new Animated.Value(0)).current;
+  const forgotPasswordAnim = useRef(new Animated.Value(0)).current;
+  
+  // Try to use the real auth hook, or fall back to the mock one
+  let auth;
+  try {
+    console.log('Attempting to get auth context');
+    auth = useAuth();
+    console.log('Auth context retrieved:', !!auth);
+  } catch (error) {
+    console.error('Error getting auth context:', error);
+    auth = null;
+  }
+  
+  // Get login function or use fallback
+  const { login: authLogin } = auth || useAuthFallback();
+  console.log('Login function available:', !!authLogin);
+  
+  // Memoize error state management to prevent rerenders
+  const setErrorSafely = useCallback(async (newError, isNetwork = false) => {
+    if (!isMountedRef.current) return;
+    
+    // Don't reset to same error to avoid flash
+    if (error === newError) return;
+    
+    setError(newError);
+    setIsNetworkError(isNetwork);
+    
+    if (newError) {
+      await AsyncStorage.setItem(ERROR_STORAGE_KEY, newError);
+    } else {
+      await AsyncStorage.removeItem(ERROR_STORAGE_KEY);
+    }
+  }, [error]);
+  
+  // Cleanup on unmount
+  useEffect(() => {
+    return () => {
+      isMountedRef.current = false;
+      console.log('Login page unmounted');
+    };
+  }, []);
+  
+  // Animate elements when component mounts
+  useEffect(() => {
+    if (isInitialized && !checkingConnection) {
+      // Initial fade in of the entire content
+      Animated.timing(fadeAnim, {
+        toValue: 1,
+        duration: 200,
+        useNativeDriver: true,
+        easing: Easing.out(Easing.cubic), // Add easing for smoother animation
+      }).start();
+      
+      // Staggered animation of individual elements - optimized for 120fps feel
+      Animated.stagger(STAGGER_DELAY, [
+        Animated.timing(logoAnim, {
+          toValue: 1,
+          duration: INPUT_TIMING,
+          useNativeDriver: true,
+          easing: Easing.out(Easing.cubic),
+        }),
+        Animated.timing(usernameAnim, {
+          toValue: 1,
+          duration: INPUT_TIMING,
+          useNativeDriver: true,
+          easing: Easing.out(Easing.cubic),
+        }),
+        Animated.timing(passwordAnim, {
+          toValue: 1,
+          duration: INPUT_TIMING,
+          useNativeDriver: true,
+          easing: Easing.out(Easing.cubic),
+        }),
+        Animated.timing(buttonAnim, {
+          toValue: 1,
+          duration: INPUT_TIMING,
+          useNativeDriver: true,
+          easing: Easing.out(Easing.cubic),
+        }),
+        Animated.timing(dividerAnim, {
+          toValue: 1,
+          duration: INPUT_TIMING,
+          useNativeDriver: true,
+          easing: Easing.out(Easing.cubic),
+        }),
+        Animated.timing(createAccountAnim, {
+          toValue: 1,
+          duration: INPUT_TIMING,
+          useNativeDriver: true,
+          easing: Easing.out(Easing.cubic),
+        }),
+        Animated.timing(forgotPasswordAnim, {
+          toValue: 1,
+          duration: INPUT_TIMING,
+          useNativeDriver: true,
+          easing: Easing.out(Easing.cubic),
+        }),
+      ]).start();
+    }
+  }, [isInitialized, checkingConnection]);
   
   // Clear error only once when returning to this page via navigation
   useFocusEffect(
@@ -85,19 +241,13 @@ export default function Index() {
           await AsyncStorage.removeItem(ERROR_STORAGE_KEY);
           await AsyncStorage.removeItem(USERNAME_STORAGE_KEY);
         } else {
-          // Check for saved error message and username for failed login attempts
-          const savedError = await AsyncStorage.getItem(ERROR_STORAGE_KEY);
-          const savedUsername = await AsyncStorage.getItem(USERNAME_STORAGE_KEY);
-          
-          if (savedError) {
-            console.log('Restoring saved error:', savedError);
-            setError(savedError);
-          }
-          
-          if (savedUsername) {
-            console.log('Restoring saved username:', savedUsername);
-            setUsername(savedUsername);
-          }
+          // ALWAYS clear any saved username and error when page loads
+          // This ensures username is never prefilled and errors don't persist
+          console.log('Clearing saved username and error');
+          await AsyncStorage.removeItem(ERROR_STORAGE_KEY);
+          await AsyncStorage.removeItem(USERNAME_STORAGE_KEY);
+          setUsername(''); // Force username to be empty
+          setError(''); // Clear any error message
         }
         
         // Initialize connectivity
@@ -114,111 +264,224 @@ export default function Index() {
     // Clean up on component unmount
     return () => {
       console.log('Login page unmounted');
+      // Also clear on unmount to be extra safe
+      AsyncStorage.removeItem(ERROR_STORAGE_KEY).catch(e => console.error(e));
+      AsyncStorage.removeItem(USERNAME_STORAGE_KEY).catch(e => console.error(e));
     };
   }, []);
   
   // Function to check backend connectivity
   const checkConnectivity = async () => {
+    if (!isMountedRef.current) return;
+    
     try {
       setCheckingConnection(true);
       const diagnostics = await connectivityService.runConnectivityDiagnostics();
       
       if (!diagnostics.device.isConnected) {
-        const newError = 'No internet connection. Please check your network settings.';
-        setError(newError);
-        // Save the error
-        await AsyncStorage.setItem(ERROR_STORAGE_KEY, newError);
+        await setErrorSafely('No internet connection. Please check your network settings.', true);
       } else if (!diagnostics.backend.isConnected) {
-        const newError = 'Connection to server failed. Please try again later.';
-        setError(newError);
-        // Save the error
-        await AsyncStorage.setItem(ERROR_STORAGE_KEY, newError);
+        await setErrorSafely('Connection to server failed. Please try again later.', true);
       } else if (error && (error.includes('connection') || error.includes('network'))) {
         // Only clear network-related errors
-        setError('');
-        await AsyncStorage.removeItem(ERROR_STORAGE_KEY);
+        await setErrorSafely('', false);
       }
     } catch (e) {
       console.log('Error checking connectivity:', e.message);
-      // Don't overwrite auth errors with connectivity errors
       if (!error || error.includes('connection') || error.includes('network')) {
-        const newError = 'Error checking server connection';
-        setError(newError);
-        await AsyncStorage.setItem(ERROR_STORAGE_KEY, newError);
+        await setErrorSafely('Error checking server connection', true);
       }
     } finally {
-      setCheckingConnection(false);
+      if (isMountedRef.current) {
+        setCheckingConnection(false);
+      }
+    }
+  };
+
+  // Button press animation - subtle effect
+  const animateButtonPress = () => {
+    Animated.sequence([
+      Animated.timing(buttonAnim, {
+        toValue: 0.97, // Reduced from 0.95 for subtler effect
+        duration: 80,
+        useNativeDriver: true,
+      }),
+      Animated.timing(buttonAnim, {
+        toValue: 1,
+        duration: 80,
+        useNativeDriver: true,
+      }),
+    ]).start();
+  };
+
+  // Save login info separately to prevent rerenders
+  const saveLoginState = async (credentials) => {
+    try {
+      // Only temporarily save username during login attempt
+      // Will be cleared if they leave the page
+      await AsyncStorage.setItem(USERNAME_STORAGE_KEY, credentials.username);
+    } catch (error) {
+      console.error('Error saving login state:', error);
     }
   };
 
   const handleLogin = async () => {
+    console.log('🔍 handleLogin function called!');
+    
+    if (!isMountedRef.current) {
+      console.log('Component not mounted, aborting login');
+      return;
+    }
+    
+    // Track that we've attempted login to help prevent flashing
+    hasAttemptedLoginRef.current = true;
+    
     if (!username || !password) {
-      const newError = 'Please enter both username and password';
-      setError(newError);
-      await AsyncStorage.setItem(ERROR_STORAGE_KEY, newError);
+      console.log('Missing username or password');
+      await setErrorSafely('Please enter both username and password', false);
       return;
     }
 
     try {
       setLoading(true);
-      // Clear previous errors when attempting a new login
-      setError('');
-      await AsyncStorage.removeItem(ERROR_STORAGE_KEY);
+      animateButtonPress();
       
-      // Save username in case login fails
-      await AsyncStorage.setItem(USERNAME_STORAGE_KEY, username);
+      // Prepare credentials and save login state
+      const credentials = { username, password };
+      console.log('Credentials prepared:', { username, passwordLength: password.length });
+      await saveLoginState(credentials);
       
-      // First check connectivity
+      // Check connectivity first
       const connectivityCheck = await connectivityService.checkBackendConnectivity();
+      console.log('Connectivity check result:', connectivityCheck);
+      
       if (!connectivityCheck.isConnected) {
-        const newError = 'Connection to server failed. Please check your network and try again.';
-        setError(newError);
-        await AsyncStorage.setItem(ERROR_STORAGE_KEY, newError);
+        await setErrorSafely('Connection to server failed. Please check your network and try again.', true);
         return;
       }
       
-      // Call the login method from auth context
+      console.log('Login process started for user:', username);
+      
+      // Try login without clearing error first
       try {
-        await authLogin({
-          username,
-          password
-        });
+        console.log('Calling auth login function...');
+        const user = await authLogin(credentials);
+        console.log('Login successful, user data received:', user ? 'yes' : 'no');
         
-        // On success, clear any saved error
+        // Success - clear error and navigate
         await AsyncStorage.removeItem(ERROR_STORAGE_KEY);
         
-        // Navigation is handled in the auth context after successful login
+        // CRITICAL: Force immediate navigation to profile
+        console.log('CRITICAL: Forcing immediate navigation to profile page');
+        
+        // First attempt - direct navigation
+        router.replace('/profile');
+        
+        // Second attempt with short delay as backup
+        setTimeout(() => {
+          console.log('Second navigation attempt executing...');
+          try {
+            router.replace('/profile');
+          } catch (err) {
+            console.error('Second navigation attempt failed:', err);
+          }
+        }, 100);
+        
+        // Third attempt with pathname object
+        setTimeout(() => {
+          console.log('Third navigation attempt executing...');
+          try {
+            router.replace({pathname: '/profile'});
+          } catch (err) {
+            console.error('Third navigation attempt failed:', err);
+          }
+        }, 200);
       } catch (error) {
         console.error('Login error:', error);
         
-        let newError = '';
-        
-        // Handle network errors
         if (error.message && 
             (error.message.includes('Network') || 
              error.message.includes('connect'))) {
-          newError = 'Network error. Please check your connection and try again.';
+          await setErrorSafely('Network error. Please check your connection and try again.', true);
         } else {
-          // Set the authentication error message
           console.log('Setting authentication error:', error.message);
-          newError = error.message || 'Invalid username or password';
+          await setErrorSafely(error.message || 'Invalid username or password', false);
         }
-        
-        // Update state and save error for persistence
-        setError(newError);
-        await AsyncStorage.setItem(ERROR_STORAGE_KEY, newError);
       }
     } finally {
-      setLoading(false);
+      if (isMountedRef.current) {
+        setLoading(false);
+      }
     }
   };
 
   // Helper function to navigate with flag
   const navigateWithFlag = async (path) => {
+    // Clear error and username before navigating away
+    await AsyncStorage.removeItem(ERROR_STORAGE_KEY);
+    await AsyncStorage.removeItem(USERNAME_STORAGE_KEY);
+    setError('');
+    
     // Set navigation flag before navigating
     await AsyncStorage.setItem(PAGE_NAVIGATION_FLAG, 'true');
-    router.push(path);
+    
+    // Animate out before navigation - subtle fade
+    Animated.timing(fadeAnim, {
+      toValue: 0.95,
+      duration: 100,
+      useNativeDriver: true,
+    }).start(() => {
+      router.push(path);
+    });
   };
+
+  // Persist error display component to prevent unnecessary unmounting/remounting
+  const persistentError = useMemo(() => (
+    <PersistentError 
+      error={error}
+      isNetworkError={isNetworkError}
+      checkConnectivity={checkConnectivity}
+    />
+  ), [error, isNetworkError, checkConnectivity]);
+
+  // Check for password reset success in AsyncStorage
+  useEffect(() => {
+    async function checkPasswordResetSuccess() {
+      try {
+        console.log('Checking for password reset success flag in AsyncStorage');
+        const resetSuccess = await AsyncStorage.getItem('password_reset_success');
+        const resetTimestamp = await AsyncStorage.getItem('password_reset_timestamp');
+        
+        console.log('Reset success flag:', resetSuccess);
+        console.log('Reset timestamp:', resetTimestamp);
+        
+        if (resetSuccess === 'true') {
+          console.log('Found password reset success flag, showing success message');
+          setSuccessMessage('Password reset successful!');
+          
+          // Clear the success flags
+          await AsyncStorage.removeItem('password_reset_success');
+          await AsyncStorage.removeItem('password_reset_timestamp');
+          console.log('Cleared password reset flags from AsyncStorage');
+          
+          // Auto-clear success message after 5 seconds
+          const timer = setTimeout(() => {
+            if (isMountedRef.current) {
+              setSuccessMessage('');
+            }
+          }, 5000);
+          
+          return () => clearTimeout(timer);
+        }
+      } catch (error) {
+        console.log('Error checking password reset success:', error);
+      }
+    }
+    
+    if (isInitialized) {
+      checkPasswordResetSuccess();
+    }
+  }, [isInitialized]);
 
   // If we're loading saved state or checking connection
   if (!isInitialized || checkingConnection) {
@@ -238,32 +501,64 @@ export default function Index() {
       style={styles.keyboardAvoidView}
     >
       <DismissKeyboardView style={styles.container}>
-        <View style={styles.loginCard}>
-          <View style={styles.logoContainer}>
-            <Logo width={220} />
-          </View>
+        <Animated.View
+          style={[
+            styles.loginCard,
+            {
+              opacity: fadeAnim,
+              transform: [{ scale: fadeAnim }]
+            }
+          ]}
+        >
+          <Animated.View 
+            style={[
+              styles.logoContainer,
+              {
+                opacity: logoAnim,
+                transform: [{ scale: logoAnim }]
+              }
+            ]}
+          >
+            <Logo width={200} />
+          </Animated.View>
           
-          <Text style={styles.loginHeader}>Login</Text>
+          <Animated.Text
+            style={[
+              styles.loginHeader,
+              {
+                opacity: logoAnim,
+                transform: [{ translateY: logoAnim.interpolate({
+                  inputRange: [0, 1],
+                  outputRange: [5, 0]
+                })}]
+              }
+            ]}
+          >
+            Login
+          </Animated.Text>
           
-          {/* Error message display */}
-          {error ? (
-            <View style={styles.errorContainer}>
-              <View style={styles.errorRow}>
-                <Ionicons name="alert-circle" size={20} color={COLORS.error} style={styles.errorIcon} />
-                <Text style={styles.errorText}>{error}</Text>
-              </View>
-              {error && (error.includes('connection') || error.includes('network')) && (
-                <TouchableOpacity 
-                  style={styles.retryButton}
-                  onPress={checkConnectivity}
-                >
-                  <Text style={styles.retryButtonText}>Retry Connection</Text>
-                </TouchableOpacity>
-              )}
+          {/* Show success message if present */}
+          {successMessage ? (
+            <View style={styles.successContainer}>
+              <Text style={styles.successText}>{successMessage}</Text>
             </View>
           ) : null}
           
-          <View style={styles.inputContainer}>
+          {/* Show error message if present */}
+          {persistentError}
+          
+          <Animated.View 
+            style={[
+              styles.inputContainer,
+              {
+                opacity: usernameAnim,
+                transform: [{ translateY: usernameAnim.interpolate({
+                  inputRange: [0, 1],
+                  outputRange: [8, 0] // Reduced from 15 for subtler effect
+                })}]
+              }
+            ]}
+          >
             <Text style={styles.label}>Username</Text>
             <View style={styles.inputWrapper}>
               <Ionicons name="person-outline" size={20} color={COLORS.textSecondary} style={styles.inputIcon} />
@@ -279,9 +574,20 @@ export default function Index() {
                 color={COLORS.text}
               />
             </View>
-          </View>
+          </Animated.View>
 
-          <View style={styles.inputContainer}>
+          <Animated.View 
+            style={[
+              styles.inputContainer,
+              {
+                opacity: passwordAnim,
+                transform: [{ translateY: passwordAnim.interpolate({
+                  inputRange: [0, 1],
+                  outputRange: [8, 0] // Reduced from 15 for subtler effect
+                })}]
+              }
+            ]}
+          >
             <Text style={styles.label}>Password</Text>
             <View style={styles.passwordContainer}>
               <Ionicons name="lock-closed-outline" size={20} color={COLORS.textSecondary} style={styles.inputIcon} />
@@ -309,42 +615,124 @@ export default function Index() {
                 />
               </TouchableOpacity>
             </View>
-          </View>
+          </Animated.View>
 
-          <TouchableOpacity
-            style={styles.loginButton}
-            onPress={handleLogin}
-            disabled={loading}
+          <Animated.View 
+            style={{
+              opacity: buttonAnim,
+              transform: [
+                { translateY: buttonAnim.interpolate({
+                  inputRange: [0, 1],
+                  outputRange: [8, 0] // Reduced from 15 for subtler effect
+                })},
+                { scale: buttonAnim }
+              ]
+            }}
           >
-            {loading ? (
-              <ActivityIndicator color="#FFFFFF" />
-            ) : (
-              <Text style={styles.loginButtonText}>Sign In</Text>
-            )}
-          </TouchableOpacity>
+            <TouchableOpacity
+              style={styles.loginButton}
+              onPress={() => {
+                console.log('👆 Sign In button pressed!');
+                handleLogin();
+              }}
+              disabled={loading}
+              activeOpacity={0.8}
+              testID="loginButton"
+            >
+              {loading ? (
+                <ActivityIndicator color="#FFFFFF" />
+              ) : (
+                <Text style={styles.loginButtonText}>Login</Text>
+              )}
+            </TouchableOpacity>
+          </Animated.View>
 
-          <View style={styles.orContainer}>
+          <Animated.View 
+            style={[
+              styles.orContainer,
+              {
+                opacity: dividerAnim,
+                transform: [{ scaleX: dividerAnim }]
+              }
+            ]}
+          >
             <View style={styles.orLine}></View>
             <Text style={styles.orText}>OR</Text>
             <View style={styles.orLine}></View>
-          </View>
+          </Animated.View>
 
-          <TouchableOpacity
-            style={styles.createAccountButton}
-            onPress={() => navigateWithFlag('/signup')}
+          <Animated.View
+            style={{
+              opacity: createAccountAnim,
+              transform: [{ translateY: createAccountAnim.interpolate({
+                inputRange: [0, 1],
+                outputRange: [5, 0] // Reduced from 10 for subtler effect
+              })}]
+            }}
           >
-            <Text style={styles.createAccountText}>Create Account</Text>
-          </TouchableOpacity>
+            <TouchableOpacity
+              style={styles.createAccountButton}
+              onPress={() => navigateWithFlag('/signup')}
+              activeOpacity={0.8}
+            >
+              <Text style={styles.createAccountText}>Create Account</Text>
+            </TouchableOpacity>
+          </Animated.View>
 
-          <TouchableOpacity
-            onPress={() => navigateWithFlag('/forgot-password')}
+          <Animated.View
+            style={{
+              opacity: forgotPasswordAnim,
+              transform: [{ translateY: forgotPasswordAnim.interpolate({
+                inputRange: [0, 1],
+                outputRange: [5, 0] // Reduced from 10 for subtler effect
+              })}]
+            }}
           >
-            <Text style={styles.forgotPasswordText}>Forgot Password?</Text>
-          </TouchableOpacity>
-        </View>
+            <TouchableOpacity
+              onPress={() => navigateWithFlag('/forgot-password')}
+            >
+              <Text style={styles.forgotPasswordText}>Forgot Password?</Text>
+            </TouchableOpacity>
+          </Animated.View>
+        </Animated.View>
       </DismissKeyboardView>
     </KeyboardAvoidingView>
   );
+}
+
+// Wrapper component to ensure AuthProvider is available
+export default function SafeLoginScreen() {
+  const [safeToRender, setSafeToRender] = useState(false);
+  
+  useEffect(() => {
+    // Delay rendering to ensure any parent AuthProvider is initialized
+    const timer = setTimeout(() => {
+      setSafeToRender(true);
+    }, 0);
+    
+    return () => clearTimeout(timer);
+  }, []);
+  
+  if (!safeToRender) {
+    return (
+      <View style={styles.loadingContainer}>
+        <ActivityIndicator size="large" color={COLORS.primary} />
+      </View>
+    );
+  }
+  
+  try {
+    // Try to use the real auth context provided by parent
+    return <LoginScreen />;
+  } catch (e) {
+    // If that fails, provide our own AuthProvider
+    console.log('Falling back to local AuthProvider');
+    return (
+      <AuthProvider>
+        <LoginScreen />
+      </AuthProvider>
+    );
+  }
 }
 
 const styles = StyleSheet.create({
@@ -436,41 +824,8 @@ const styles = StyleSheet.create({
     right: 12,
     padding: 8,
   },
-  errorContainer: {
-    backgroundColor: 'rgba(255, 107, 107, 0.15)',
-    padding: 12,
-    borderRadius: 8,
-    marginVertical: 16,
-    borderWidth: 1,
-    borderColor: COLORS.error,
-    width: '100%',
-  },
-  errorRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  errorIcon: {
-    marginRight: 6,
-  },
-  errorText: {
-    color: COLORS.error,
-    textAlign: 'center',
-    fontWeight: 'bold',
-    fontSize: 16,
-  },
-  retryButton: {
-    backgroundColor: COLORS.secondary,
-    paddingVertical: 8,
-    paddingHorizontal: 16,
-    borderRadius: 4,
-    borderWidth: 1,
-    borderColor: COLORS.error,
-    marginTop: 10,
-  },
-  retryButtonText: {
-    color: COLORS.error,
-    fontWeight: '500',
+  errorMargin: {
+    marginBottom: 16,
   },
   loginButton: {
     backgroundColor: COLORS.primary,
@@ -518,6 +873,25 @@ const styles = StyleSheet.create({
   forgotPasswordText: {
     color: COLORS.textSecondary,
     fontSize: 14,
+    textAlign: 'center',
+  },
+  errorContainer: {
+    minHeight: 80, // Reserve space for errors to prevent layout shifts
+    justifyContent: 'center',
+    width: '100%',
+  },
+  successContainer: {
+    backgroundColor: `${COLORS.success}20`,
+    borderRadius: 8,
+    padding: 12,
+    marginBottom: 16,
+    borderWidth: 1,
+    borderColor: COLORS.success,
+  },
+  successText: {
+    color: COLORS.success,
+    fontSize: 16,
+    fontWeight: '500',
     textAlign: 'center',
   },
 }); 

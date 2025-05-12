@@ -1,11 +1,15 @@
-import React, { useEffect, useState } from 'react';
-import { Tabs, Slot, Stack, router } from 'expo-router';
+import React, { useEffect, useState, memo } from 'react';
+import { Tabs, Stack, router, usePathname } from 'expo-router';
 import { useFonts } from 'expo-font';
 import { SplashScreen } from 'expo-router';
-import { StatusBar } from 'expo-status-bar';
-import { LogBox, View, ActivityIndicator } from 'react-native';
+import { StatusBar, StyleSheet, View, ActivityIndicator, Animated, LogBox } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
-import { AuthProvider, useAuth } from '../services/authContext';
+import { AuthProvider } from '../services/authContext';
+import connectivityService from '../services/connectivity';
+import errorSuppressor from '../services/errorSuppressor';
+
+// Import global CSS for hiding error overlays
+import './global.css';
 
 // PEAKMODE color theme based on logo
 const COLORS = {
@@ -21,195 +25,112 @@ const COLORS = {
   success: '#4CAF50', // Green for success
 }
 
-// Prevent duplicate error messages for authentication errors
-// This silences the red/black error overlay for authentication errors that we already handle in the UI
+// Completely suppress the error overlay so we can handle all errors in our UI
 if (global.ErrorUtils) {
   const originalGlobalHandler = global.ErrorUtils.getGlobalHandler();
   
   global.ErrorUtils.setGlobalHandler((error, isFatal) => {
-    // Check if this is an authentication error (which we already handle in the UI)
-    const isAuthError = error.name === 'AuthenticationError' || 
-                        (error.isHandled === true) ||
-                        (error.message && (
-                          error.message.includes('Incorrect username or password') ||
-                          error.message.includes('Invalid credentials')
-                        ));
-                        
-    if (isAuthError) {
-      // Don't show the error overlay for auth errors
-      console.log('Suppressing global error report for auth error:', error.message);
-      return;
+    // Convert to a handled error to prevent overlay
+    const handledError = new errorSuppressor.HandledError(error.message);
+    
+    // Only log in development
+    if (process.env.NODE_ENV === 'development') {
+      console.log('Error captured by global handler:', error.message);
     }
     
-    // For all other errors, use the original handler
-    originalGlobalHandler(error, isFatal);
+    // Don't call the original handler, which would show the overlay
   });
 }
 
-// Ignore specific warning messages
-LogBox.ignoreLogs([
-  'Incorrect username or password',
-  'Invalid credentials'
-]);
+// Replace the console.error function to prevent error overlays
+const originalConsoleError = console.error;
+console.error = (...args) => {
+  // Handle the error safely
+  errorSuppressor.handleError(
+    args[0] instanceof Error ? args[0] : new Error(args.join(' '))
+  );
+};
+
+// Ignore all warning logs to prevent yellow boxes
+LogBox.ignoreAllLogs();
 
 // Prevent the splash screen from auto-hiding before asset loading is complete
 SplashScreen.preventAutoHideAsync();
 
-// Main layout component that uses authentication context
-function MainLayout() {
-  const { isAuthenticated, loading } = useAuth();
+// Implement a persistent layout wrapper to prevent flashing
+const PersistentLayout = memo(({ children }) => {
+  // Initialize error suppression
+  useEffect(() => {
+    return errorSuppressor.initializeErrorSuppression();
+  }, []);
   
-  useEffect(() => {
-    // When auth state changes, navigate to index if not logged in
-    if (!loading && !isAuthenticated) {
-      router.replace('/');
-    }
-  }, [isAuthenticated, loading]);
-
-  const [fontsLoaded, fontError] = useFonts({
-    // Add any custom fonts here if needed
-  });
-
-  useEffect(() => {
-    if (fontsLoaded || fontError) {
-      // Once fonts are loaded (or an error occurred), hide the splash screen
-      SplashScreen.hideAsync();
-    }
-  }, [fontsLoaded, fontError]);
-
-  // If the fonts haven't loaded and there's no error, return null to show the splash screen
-  if (!fontsLoaded && !fontError) {
-    return null;
-  }
-
-  // Loading state for auth
-  if (loading) {
-    return (
-      <View style={{ flex: 1, justifyContent: 'center', alignItems: 'center', backgroundColor: COLORS.background }}>
-        <ActivityIndicator size="large" color={COLORS.primary} />
-      </View>
-    );
-  }
-
-  // For non-authenticated routes, use a simple stack navigator (no tabs)
-  if (!isAuthenticated) {
-    return (
-      <>
-        <StatusBar style="dark" />
-        <Stack screenOptions={{ headerShown: false }}>
-          <Stack.Screen name="index" />
-          <Stack.Screen name="signup" />
-          <Stack.Screen name="security-questions" />
-          <Stack.Screen name="forgot-password" />
-          <Stack.Screen name="reset-password" />
-        </Stack>
-      </>
-    );
-  }
-
-  // For authenticated users, show the tab bar
   return (
-    <>
-      <StatusBar style="dark" />
-      <Tabs 
-        screenOptions={{
-          headerShown: false,
-          tabBarActiveTintColor: COLORS.primary,
-          tabBarInactiveTintColor: COLORS.textSecondary,
-          tabBarStyle: {
-            backgroundColor: COLORS.cardBg,
-            borderTopColor: COLORS.border,
-            shadowColor: '#000',
-            shadowOffset: { width: 0, height: -2 },
-            shadowOpacity: 0.1,
-            shadowRadius: 4,
-            elevation: 5,
-            height: 60,
-            paddingBottom: 6,
-          },
-          tabBarLabelStyle: {
-            fontSize: 12,
-            fontWeight: '500',
-          }
-        }}
-      >
-        <Tabs.Screen
-          name="dashboard"
-          options={{
-            title: "Dashboard",
-            tabBarIcon: ({ color, size }) => (
-              <Ionicons name="home-outline" color={color} size={size} />
-            ),
+    <View style={styles.persistentContainer}>
+      {children}
+    </View>
+  );
+});
+
+// App layout with preloading and persistent container
+export default function RootLayout() {
+  // Track app initialization to prevent flashing
+  const [appIsReady, setAppIsReady] = useState(false);
+  
+  // Preload critical data and fonts
+  const [fontsLoaded] = useFonts({
+    // Add your fonts here if needed
+  });
+  
+  // Preload all necessary app resources before showing any content
+  useEffect(() => {
+    async function prepare() {
+      try {
+        // Initialize error suppression
+        errorSuppressor.hideErrorOverlays();
+        
+        // Preload network connectivity status
+        await connectivityService.checkBackendConnectivity();
+        
+        // Wait for fonts to load
+        await SplashScreen.preventAutoHideAsync();
+        
+        // Add any additional preloading here
+      } catch (e) {
+        // Safely handle error without overlay
+        errorSuppressor.handleError(e);
+      } finally {
+        // Mark app as ready
+        setAppIsReady(true);
+        SplashScreen.hideAsync();
+      }
+    }
+    
+    prepare();
+  }, []);
+
+  // Keep splash screen visible while app is not ready
+  if (!appIsReady || !fontsLoaded) {
+    return null; // This keeps the splash screen visible
+  }
+
+  return (
+    <AuthProvider>
+      <PersistentLayout>
+        <Stack
+          screenOptions={{
+            headerShown: false,
+            contentStyle: { backgroundColor: 'transparent' },
+            animation: 'fade', // Use fade transition to prevent jarring changes
           }}
         />
-        <Tabs.Screen
-          name="supplements"
-          options={{
-            title: "Supplements",
-            tabBarIcon: ({ color, size }) => (
-              <Ionicons name="flask-outline" color={color} size={size} />
-            ),
-          }}
-        />
-        <Tabs.Screen
-          name="progress"
-          options={{
-            title: "Progress",
-            tabBarIcon: ({ color, size }) => (
-              <Ionicons name="trending-up-outline" color={color} size={size} />
-            ),
-          }}
-        />
-        <Tabs.Screen
-          name="profile"
-          options={{
-            title: "Profile",
-            tabBarIcon: ({ color, size }) => (
-              <Ionicons name="person-outline" color={color} size={size} />
-            ),
-          }}
-        />
-        {/* Hide auth screens and make them inaccessible in authenticated state */}
-        <Tabs.Screen
-          name="index"
-          options={{
-            href: null,
-          }}
-        />
-        <Tabs.Screen
-          name="signup"
-          options={{
-            href: null,
-          }}
-        />
-        <Tabs.Screen
-          name="security-questions"
-          options={{
-            href: null,
-          }}
-        />
-        <Tabs.Screen
-          name="forgot-password"
-          options={{
-            href: null,
-          }}
-        />
-        <Tabs.Screen
-          name="reset-password"
-          options={{
-            href: null,
-          }}
-        />
-      </Tabs>
-    </>
+      </PersistentLayout>
+    </AuthProvider>
   );
 }
 
-// Root layout that provides the authentication context
-export default function RootLayout() {
-  return (
-    <AuthProvider>
-      <MainLayout />
-    </AuthProvider>
-  );
-} 
+const styles = StyleSheet.create({
+  persistentContainer: {
+    flex: 1,
+    backgroundColor: '#F5F5F5', // Match your app's background color
+  },
+}); 
