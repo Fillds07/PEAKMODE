@@ -14,7 +14,9 @@ import {
   RefreshControl,
   ToastAndroid,
   FlatList,
-  Pressable
+  Pressable,
+  TouchableWithoutFeedback,
+  Keyboard
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { router } from 'expo-router';
@@ -38,6 +40,69 @@ const COLORS = {
   error: '#FF6B6B', // Red for errors
   success: '#4CAF50', // Green for success
 }
+
+// Add this custom dropdown component for security questions
+const CustomDropdown = ({ 
+  options, 
+  selectedValue, 
+  onSelect, 
+  placeholder = "Select a security question"
+}) => {
+  const [isOpen, setIsOpen] = useState(false);
+  
+  const selectedOption = selectedValue ? 
+    options.find(option => option.id === selectedValue) : 
+    null;
+  
+  return (
+    <View style={styles.customDropdownContainer}>
+      <TouchableOpacity 
+        style={styles.customDropdownHeader}
+        onPress={() => setIsOpen(!isOpen)}
+      >
+        <Text style={[
+          styles.customDropdownHeaderText,
+          !selectedOption && styles.customDropdownPlaceholder
+        ]}>
+          {selectedOption ? selectedOption.question : placeholder}
+        </Text>
+        <Ionicons 
+          name={isOpen ? "chevron-up" : "chevron-down"} 
+          size={24} 
+          color={COLORS.text} 
+        />
+      </TouchableOpacity>
+      
+      {isOpen && (
+        <View style={styles.customDropdownOptions}>
+          {options.map(option => (
+            <TouchableOpacity
+              key={option.id}
+              style={[
+                styles.customDropdownOption,
+                selectedValue === option.id && styles.customDropdownOptionSelected
+              ]}
+              onPress={() => {
+                onSelect(option.id);
+                setIsOpen(false);
+              }}
+            >
+              <Text style={[
+                styles.customDropdownOptionText,
+                selectedValue === option.id && styles.customDropdownOptionTextSelected
+              ]}>
+                {option.question}
+              </Text>
+              {selectedValue === option.id && (
+                <Ionicons name="checkmark" size={20} color={COLORS.primary} />
+              )}
+            </TouchableOpacity>
+          ))}
+        </View>
+      )}
+    </View>
+  );
+};
 
 function ProfileScreen() {
   const [loading, setLoading] = useState(true);
@@ -75,6 +140,7 @@ function ProfileScreen() {
     { id: null, question: 'Select a security question', answer: '' },
     { id: null, question: 'Select a security question', answer: '' }
   ]);
+  const [openDropdownIndex, setOpenDropdownIndex] = useState(null);
   const [loadingQuestions, setLoadingQuestions] = useState(false);
   const [savingQuestions, setSavingQuestions] = useState(false);
   const [securityError, setSecurityError] = useState('');
@@ -506,16 +572,27 @@ function ProfileScreen() {
       const allQuestionsResponse = await authService.getUserSecurityQuestions(userData.username);
       
       if (allQuestionsResponse.error) {
-        setSecurityError(allQuestionsResponse.data.message || 'Error fetching security questions');
+        setSecurityError(allQuestionsResponse.data?.message || 'Error fetching security questions');
         return;
       }
       
-      setSecurityQuestions(allQuestionsResponse.data.data.questions || []);
+      console.log('Received security questions:', allQuestionsResponse.data?.data?.questions);
+      
+      // Make sure we're properly setting the questions from the response
+      if (allQuestionsResponse.data?.data?.questions) {
+        setSecurityQuestions(allQuestionsResponse.data.data.questions);
+      } else {
+        console.error('No questions found in response:', allQuestionsResponse);
+        setSecurityError('No security questions available');
+        return;
+      }
       
       // Get user's selected questions if they have any
       const userQuestionsResponse = await userService.getUserSecurityQuestions();
       
-      if (!userQuestionsResponse.error && userQuestionsResponse.data.data.questions) {
+      console.log('User selected questions response:', userQuestionsResponse);
+      
+      if (!userQuestionsResponse.error && userQuestionsResponse.data?.data?.questions) {
         // Set selected questions and their answers
         const userQuestions = userQuestionsResponse.data.data.questions;
         setSelectedQuestions(userQuestions);
@@ -550,6 +627,11 @@ function ProfileScreen() {
     setSecurityError('');
   };
   
+  // Open/close dropdown
+  const toggleDropdown = (index) => {
+    setOpenDropdownIndex(openDropdownIndex === index ? null : index);
+  };
+  
   // Handle answer change
   const handleAnswerChange = (index, answer) => {
     const updatedQuestions = [...selectedQuestions];
@@ -571,6 +653,7 @@ function ProfileScreen() {
     };
     
     setSelectedQuestions(updatedQuestions);
+    setOpenDropdownIndex(null); // Close dropdown after selection
   };
   
   // Save security questions and answers
@@ -953,21 +1036,28 @@ function ProfileScreen() {
           behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
           style={styles.modalContainer}
         >
-          <View style={styles.modalContent}>
-            <View style={styles.modalHeader}>
-              <Text style={styles.modalTitle}>Security Questions</Text>
-              <TouchableOpacity onPress={handleCloseSecurityQuestions}>
-                <Ionicons name="close" size={24} color={COLORS.text} />
-              </TouchableOpacity>
-            </View>
-            
-            {securityError ? (
-              <Text style={styles.modalError}>{securityError}</Text>
-            ) : null}
-            
-            <Text style={styles.modalDescription}>
-              Select 3 security questions and provide answers. These will be used to reset your password if needed.
-            </Text>
+          <View style={styles.securityModalContent}>
+            <TouchableWithoutFeedback onPress={() => {
+              // Close any open dropdowns when tapping outside
+              Keyboard.dismiss();
+            }}>
+              <View>
+                <View style={styles.modalHeader}>
+                  <Text style={styles.modalTitle}>Security Questions</Text>
+                  <TouchableOpacity onPress={handleCloseSecurityQuestions}>
+                    <Ionicons name="close" size={24} color={COLORS.text} />
+                  </TouchableOpacity>
+                </View>
+                
+                {securityError ? (
+                  <Text style={styles.modalError}>{securityError}</Text>
+                ) : null}
+                
+                <Text style={styles.modalDescription}>
+                  Select 3 security questions and provide answers. These will be used to reset your password if needed.
+                </Text>
+              </View>
+            </TouchableWithoutFeedback>
             
             {loadingQuestions ? (
               <View style={styles.loadingContainer}>
@@ -979,18 +1069,23 @@ function ProfileScreen() {
                 {/* Question 1 */}
                 <View style={styles.questionSection}>
                   <Text style={styles.questionNumber}>Question 1</Text>
-                  <View style={styles.pickerWrapper}>
-                    <Picker
-                      selectedValue={selectedQuestions[0]?.id}
-                      onValueChange={(itemValue) => handleQuestionSelect(0, itemValue)}
-                      style={styles.picker}
-                    >
-                      <Picker.Item label="Select a security question" value={null} />
-                      {securityQuestions.map(q => (
-                        <Picker.Item key={q.id} label={q.question} value={q.id} />
-                      ))}
-                    </Picker>
-                  </View>
+                  
+                  <CustomDropdown
+                    options={securityQuestions}
+                    selectedValue={selectedQuestions[0]?.id}
+                    onSelect={(id) => {
+                      const question = securityQuestions.find(q => q.id === id);
+                      if (question) {
+                        const updatedQuestions = [...selectedQuestions];
+                        updatedQuestions[0] = {
+                          ...updatedQuestions[0],
+                          id: question.id,
+                          question: question.question
+                        };
+                        setSelectedQuestions(updatedQuestions);
+                      }
+                    }}
+                  />
                   
                   <Text style={styles.answerLabel}>Answer</Text>
                   <TextInput
@@ -1001,21 +1096,28 @@ function ProfileScreen() {
                   />
                 </View>
                 
+                <View style={styles.questionSeparator} />
+                
                 {/* Question 2 */}
                 <View style={styles.questionSection}>
                   <Text style={styles.questionNumber}>Question 2</Text>
-                  <View style={styles.pickerWrapper}>
-                    <Picker
-                      selectedValue={selectedQuestions[1]?.id}
-                      onValueChange={(itemValue) => handleQuestionSelect(1, itemValue)}
-                      style={styles.picker}
-                    >
-                      <Picker.Item label="Select a security question" value={null} />
-                      {securityQuestions.map(q => (
-                        <Picker.Item key={q.id} label={q.question} value={q.id} />
-                      ))}
-                    </Picker>
-                  </View>
+                  
+                  <CustomDropdown
+                    options={securityQuestions}
+                    selectedValue={selectedQuestions[1]?.id}
+                    onSelect={(id) => {
+                      const question = securityQuestions.find(q => q.id === id);
+                      if (question) {
+                        const updatedQuestions = [...selectedQuestions];
+                        updatedQuestions[1] = {
+                          ...updatedQuestions[1],
+                          id: question.id,
+                          question: question.question
+                        };
+                        setSelectedQuestions(updatedQuestions);
+                      }
+                    }}
+                  />
                   
                   <Text style={styles.answerLabel}>Answer</Text>
                   <TextInput
@@ -1026,21 +1128,28 @@ function ProfileScreen() {
                   />
                 </View>
                 
+                <View style={styles.questionSeparator} />
+                
                 {/* Question 3 */}
                 <View style={styles.questionSection}>
                   <Text style={styles.questionNumber}>Question 3</Text>
-                  <View style={styles.pickerWrapper}>
-                    <Picker
-                      selectedValue={selectedQuestions[2]?.id}
-                      onValueChange={(itemValue) => handleQuestionSelect(2, itemValue)}
-                      style={styles.picker}
-                    >
-                      <Picker.Item label="Select a security question" value={null} />
-                      {securityQuestions.map(q => (
-                        <Picker.Item key={q.id} label={q.question} value={q.id} />
-                      ))}
-                    </Picker>
-                  </View>
+                  
+                  <CustomDropdown
+                    options={securityQuestions}
+                    selectedValue={selectedQuestions[2]?.id}
+                    onSelect={(id) => {
+                      const question = securityQuestions.find(q => q.id === id);
+                      if (question) {
+                        const updatedQuestions = [...selectedQuestions];
+                        updatedQuestions[2] = {
+                          ...updatedQuestions[2],
+                          id: question.id,
+                          question: question.question
+                        };
+                        setSelectedQuestions(updatedQuestions);
+                      }
+                    }}
+                  />
                   
                   <Text style={styles.answerLabel}>Answer</Text>
                   <TextInput
@@ -1337,10 +1446,16 @@ const styles = StyleSheet.create({
   },
   
   questionsContainer: {
-    maxHeight: '60%',
+    maxHeight: Platform.OS === 'ios' ? '60%' : '55%',
   },
   questionSection: {
-    marginBottom: 24,
+    marginBottom: 16,
+    paddingVertical: 8,
+  },
+  questionSeparator: {
+    height: 1,
+    backgroundColor: COLORS.border,
+    marginVertical: 8,
   },
   questionNumber: {
     fontSize: 18,
@@ -1348,7 +1463,7 @@ const styles = StyleSheet.create({
     color: COLORS.text,
     marginBottom: 12,
   },
-  pickerWrapper: {
+  pickerContainer: {
     borderWidth: 1,
     borderColor: COLORS.border,
     borderRadius: 8,
@@ -1357,8 +1472,8 @@ const styles = StyleSheet.create({
     overflow: 'hidden',
   },
   picker: {
-    height: 50,
     width: '100%',
+    height: Platform.OS === 'ios' ? 150 : 50,
   },
   answerLabel: {
     fontSize: 16,
@@ -1373,5 +1488,144 @@ const styles = StyleSheet.create({
     fontSize: 16,
     borderWidth: 1,
     borderColor: COLORS.border,
+    minHeight: 48,
+  },
+  securityModalContent: {
+    backgroundColor: COLORS.cardBg,
+    padding: 20,
+    borderTopLeftRadius: 20,
+    borderTopRightRadius: 20,
+    maxHeight: '90%',
+  },
+  modalHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 20,
+  },
+  modalTitle: {
+    fontSize: 20,
+    fontWeight: 'bold',
+    color: COLORS.text,
+  },
+  modalDescription: {
+    fontSize: 16,
+    color: COLORS.text,
+    marginBottom: 20,
+    lineHeight: 22,
+  },
+  modalError: {
+    color: COLORS.error,
+    marginBottom: 16,
+    padding: 8,
+    borderRadius: 4,
+    backgroundColor: 'rgba(255, 107, 107, 0.1)',
+  },
+  questionsContainer: {
+    maxHeight: Platform.OS === 'ios' ? '60%' : '55%',
+  },
+  questionSection: {
+    marginBottom: 16,
+    paddingVertical: 8,
+  },
+  questionSeparator: {
+    height: 1,
+    backgroundColor: COLORS.border,
+    marginVertical: 8,
+  },
+  questionNumber: {
+    fontSize: 18,
+    fontWeight: 'bold',
+    color: COLORS.text,
+    marginBottom: 12,
+  },
+  pickerContainer: {
+    borderWidth: 1,
+    borderColor: COLORS.border,
+    borderRadius: 8,
+    backgroundColor: COLORS.inputBg,
+    marginBottom: 16,
+    overflow: 'hidden',
+  },
+  picker: {
+    width: '100%',
+    height: Platform.OS === 'ios' ? 150 : 50,
+  },
+  answerLabel: {
+    fontSize: 16,
+    fontWeight: 'bold',
+    color: COLORS.text,
+    marginBottom: 8,
+  },
+  answerInput: {
+    backgroundColor: COLORS.inputBg,
+    padding: 12,
+    borderRadius: 8,
+    fontSize: 16,
+    borderWidth: 1,
+    borderColor: COLORS.border,
+    minHeight: 48,
+  },
+  // Custom dropdown styles
+  customDropdownContainer: {
+    position: 'relative',
+    marginBottom: 16,
+    zIndex: 1,
+  },
+  customDropdownHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    backgroundColor: COLORS.inputBg,
+    borderWidth: 1,
+    borderColor: COLORS.border,
+    borderRadius: 8,
+    padding: 14,
+  },
+  customDropdownHeaderText: {
+    fontSize: 16,
+    color: COLORS.text,
+    flex: 1,
+  },
+  customDropdownPlaceholder: {
+    color: COLORS.textSecondary,
+  },
+  customDropdownOptions: {
+    position: 'absolute',
+    top: '100%',
+    left: 0,
+    right: 0,
+    backgroundColor: COLORS.inputBg,
+    borderWidth: 1,
+    borderTopWidth: 0,
+    borderColor: COLORS.border,
+    borderBottomLeftRadius: 8,
+    borderBottomRightRadius: 8,
+    elevation: 5,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.1,
+    shadowRadius: 4,
+    maxHeight: 300,
+    zIndex: 100,
+  },
+  customDropdownOption: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    padding: 14,
+    borderBottomWidth: 1,
+    borderBottomColor: COLORS.border,
+  },
+  customDropdownOptionSelected: {
+    backgroundColor: 'rgba(247, 178, 51, 0.2)',
+  },
+  customDropdownOptionText: {
+    fontSize: 16,
+    color: COLORS.text,
+  },
+  customDropdownOptionTextSelected: {
+    color: COLORS.primary,
+    fontWeight: 'bold',
   },
 }); 
