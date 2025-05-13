@@ -19,10 +19,12 @@ import connectivityService from '../services/connectivity';
 import { DismissKeyboardView } from '../services/keyboardUtils';
 import Logo from '../services/logoComponent';
 import { useAuth, AuthProvider } from '../services/authContext';
+import { useTheme } from '../services/themeContext';
 import { Ionicons } from '@expo/vector-icons';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import StandardError from '../services/ErrorDisplay';
 import TransitionWrapper, { SlideTransition } from '../services/TransitionWrapper';
+import ThemeToggle from '../components/ThemeToggle';
 
 // PEAKMODE color theme based on logo
 const COLORS = {
@@ -50,6 +52,8 @@ const INPUT_TIMING = 220; // Consistent timing for all elements
 
 // Persistent error component that stays mounted
 const PersistentError = memo(({ error, isNetworkError, checkConnectivity }) => {
+  const { colors } = useTheme();
+  
   return (
     <View style={styles.errorContainer}>
       <StandardError 
@@ -57,6 +61,7 @@ const PersistentError = memo(({ error, isNetworkError, checkConnectivity }) => {
         showRetry={isNetworkError}
         onRetry={checkConnectivity}
         style={styles.errorMargin}
+        textColor={colors.error}
       />
     </View>
   );
@@ -84,6 +89,7 @@ const useAuthFallback = () => {
 function LoginScreen() {
   // Get URL parameters
   const params = useLocalSearchParams();
+  const { colors, isDarkMode, toggleTheme } = useTheme();
   
   // State
   const [username, setUsername] = useState('');
@@ -435,15 +441,6 @@ function LoginScreen() {
     });
   };
 
-  // Persist error display component to prevent unnecessary unmounting/remounting
-  const persistentError = useMemo(() => (
-    <PersistentError 
-      error={error}
-      isNetworkError={isNetworkError}
-      checkConnectivity={checkConnectivity}
-    />
-  ), [error, isNetworkError, checkConnectivity]);
-
   // Check for password reset success in AsyncStorage
   useEffect(() => {
     async function checkPasswordResetSuccess() {
@@ -486,9 +483,9 @@ function LoginScreen() {
   // If we're loading saved state or checking connection
   if (!isInitialized || checkingConnection) {
     return (
-      <View style={styles.loadingContainer}>
-        <ActivityIndicator size="large" color={COLORS.primary} />
-        <Text style={styles.loadingText}>
+      <View style={[styles.loadingContainer, { backgroundColor: colors.background }]}>
+        <ActivityIndicator size="large" color={colors.primary} />
+        <Text style={[styles.loadingText, { color: colors.textSecondary }]}>
           {!isInitialized ? 'Initializing...' : 'Checking connection...'}
         </Text>
       </View>
@@ -498,15 +495,17 @@ function LoginScreen() {
   return (
     <KeyboardAvoidingView
       behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
-      style={styles.keyboardAvoidView}
+      style={[styles.keyboardAvoidView, { backgroundColor: colors.background }]}
     >
-      <DismissKeyboardView style={styles.container}>
+      <DismissKeyboardView style={[styles.container, { backgroundColor: colors.background }]}>
         <Animated.View
           style={[
             styles.loginCard,
             {
               opacity: fadeAnim,
-              transform: [{ scale: fadeAnim }]
+              transform: [{ scale: fadeAnim }],
+              backgroundColor: colors.cardBg,
+              shadowColor: isDarkMode ? '#000' : '#000',
             }
           ]}
         >
@@ -527,6 +526,7 @@ function LoginScreen() {
               styles.loginHeader,
               {
                 opacity: logoAnim,
+                color: colors.text,
                 transform: [{ translateY: logoAnim.interpolate({
                   inputRange: [0, 1],
                   outputRange: [5, 0]
@@ -539,13 +539,20 @@ function LoginScreen() {
           
           {/* Show success message if present */}
           {successMessage ? (
-            <View style={styles.successContainer}>
-              <Text style={styles.successText}>{successMessage}</Text>
+            <View style={[styles.successContainer, { 
+              backgroundColor: colors.success + '20',
+              borderColor: colors.success 
+            }]}>
+              <Text style={[styles.successText, { color: colors.success }]}>{successMessage}</Text>
             </View>
           ) : null}
           
           {/* Show error message if present */}
-          {persistentError}
+          <PersistentError 
+            error={error}
+            isNetworkError={isNetworkError}
+            checkConnectivity={checkConnectivity}
+          />
           
           <Animated.View 
             style={[
@@ -559,19 +566,21 @@ function LoginScreen() {
               }
             ]}
           >
-            <Text style={styles.label}>Username</Text>
-            <View style={styles.inputWrapper}>
-              <Ionicons name="person-outline" size={20} color={COLORS.textSecondary} style={styles.inputIcon} />
+            <Text style={[styles.label, { color: colors.text }]}>Username</Text>
+            <View style={[styles.inputWrapper, { 
+              backgroundColor: colors.inputBg,
+              borderColor: colors.border,
+            }]}>
+              <Ionicons name="person-outline" size={20} color={colors.textSecondary} style={styles.inputIcon} />
               <TextInput
-                style={styles.input}
+                style={[styles.input, { color: colors.text }]}
                 value={username}
                 onChangeText={text => setUsername(text)}
                 placeholder="Enter your username"
+                placeholderTextColor={colors.textSecondary}
                 autoCapitalize="none"
                 autoComplete="off"
                 textContentType="none"
-                placeholderTextColor={COLORS.textSecondary}
-                color={COLORS.text}
               />
             </View>
           </Animated.View>
@@ -588,30 +597,32 @@ function LoginScreen() {
               }
             ]}
           >
-            <Text style={styles.label}>Password</Text>
-            <View style={styles.passwordContainer}>
-              <Ionicons name="lock-closed-outline" size={20} color={COLORS.textSecondary} style={styles.inputIcon} />
+            <Text style={[styles.label, { color: colors.text }]}>Password</Text>
+            <View style={[styles.passwordContainer, { 
+              backgroundColor: colors.inputBg,
+              borderColor: colors.border,
+            }]}>
+              <Ionicons name="lock-closed-outline" size={20} color={colors.textSecondary} style={styles.inputIcon} />
               <TextInput
-                style={[styles.input, styles.passwordInput]}
+                style={[styles.input, styles.passwordInput, { color: colors.text }]}
                 value={password}
                 onChangeText={text => setPassword(text)}
                 placeholder="Enter your password"
+                placeholderTextColor={colors.textSecondary}
                 secureTextEntry={!showPassword}
                 autoCapitalize="none"
                 autoComplete="off"
                 textContentType="oneTimeCode"
                 spellCheck={false}
-                placeholderTextColor={COLORS.textSecondary}
-                color={COLORS.text}
               />
               <TouchableOpacity 
                 style={styles.passwordToggle}
                 onPress={() => setShowPassword(!showPassword)}
               >
                 <Ionicons 
-                  name={showPassword ? 'eye-off' : 'eye'} 
+                  name={showPassword ? "eye-off" : "eye"} 
                   size={24} 
-                  color={COLORS.textSecondary} 
+                  color={colors.textSecondary} 
                 />
               </TouchableOpacity>
             </View>
@@ -630,7 +641,7 @@ function LoginScreen() {
             }}
           >
             <TouchableOpacity
-              style={styles.loginButton}
+              style={[styles.loginButton, { backgroundColor: colors.primary }]}
               onPress={() => {
                 console.log('👆 Sign In button pressed!');
                 handleLogin();
@@ -640,9 +651,9 @@ function LoginScreen() {
               testID="loginButton"
             >
               {loading ? (
-                <ActivityIndicator color="#FFFFFF" />
+                <ActivityIndicator color={colors.secondary} />
               ) : (
-                <Text style={styles.loginButtonText}>Login</Text>
+                <Text style={[styles.loginButtonText, { color: colors.secondary }]}>Login</Text>
               )}
             </TouchableOpacity>
           </Animated.View>
@@ -656,9 +667,9 @@ function LoginScreen() {
               }
             ]}
           >
-            <View style={styles.orLine}></View>
-            <Text style={styles.orText}>OR</Text>
-            <View style={styles.orLine}></View>
+            <View style={[styles.orLine, { backgroundColor: colors.border }]}></View>
+            <Text style={[styles.orText, { color: colors.textSecondary }]}>OR</Text>
+            <View style={[styles.orLine, { backgroundColor: colors.border }]}></View>
           </Animated.View>
 
           <Animated.View
@@ -671,11 +682,11 @@ function LoginScreen() {
             }}
           >
             <TouchableOpacity
-              style={styles.createAccountButton}
+              style={[styles.createAccountButton, { borderColor: colors.primary }]}
               onPress={() => navigateWithFlag('/signup')}
               activeOpacity={0.8}
             >
-              <Text style={styles.createAccountText}>Create Account</Text>
+              <Text style={[styles.createAccountText, { color: colors.primary }]}>Create Account</Text>
             </TouchableOpacity>
           </Animated.View>
 
@@ -691,7 +702,7 @@ function LoginScreen() {
             <TouchableOpacity
               onPress={() => navigateWithFlag('/forgot-password')}
             >
-              <Text style={styles.forgotPasswordText}>Forgot Password?</Text>
+              <Text style={[styles.forgotPasswordText, { color: colors.textSecondary }]}>Forgot Password?</Text>
             </TouchableOpacity>
           </Animated.View>
         </Animated.View>
@@ -703,6 +714,7 @@ function LoginScreen() {
 // Wrapper component to ensure AuthProvider is available
 export default function SafeLoginScreen() {
   const [safeToRender, setSafeToRender] = useState(false);
+  const { colors } = useTheme();
   
   useEffect(() => {
     // Delay rendering to ensure any parent AuthProvider is initialized
@@ -715,8 +727,8 @@ export default function SafeLoginScreen() {
   
   if (!safeToRender) {
     return (
-      <View style={styles.loadingContainer}>
-        <ActivityIndicator size="large" color={COLORS.primary} />
+      <View style={[styles.loadingContainer, { backgroundColor: colors.background }]}>
+        <ActivityIndicator size="large" color={colors.primary} />
       </View>
     );
   }
@@ -743,27 +755,22 @@ const styles = StyleSheet.create({
     flex: 1,
     justifyContent: 'center',
     alignItems: 'center',
-    backgroundColor: COLORS.background,
     padding: 20,
   },
   loadingContainer: {
     flex: 1,
     justifyContent: 'center',
     alignItems: 'center',
-    backgroundColor: COLORS.background,
   },
   loadingText: {
     marginTop: 10,
     fontSize: 16,
-    color: COLORS.text,
   },
   loginCard: {
-    backgroundColor: COLORS.cardBg,
     borderRadius: 12,
     width: '100%',
     maxWidth: 400,
     padding: 24,
-    shadowColor: '#000',
     shadowOffset: { width: 0, height: 2 },
     shadowOpacity: 0.1,
     shadowRadius: 5,
@@ -776,7 +783,6 @@ const styles = StyleSheet.create({
   loginHeader: {
     fontSize: 24,
     fontWeight: 'bold',
-    color: COLORS.text,
     marginBottom: 10,
     textAlign: 'center',
   },
@@ -786,16 +792,13 @@ const styles = StyleSheet.create({
   label: {
     fontSize: 14,
     fontWeight: '500',
-    color: COLORS.text,
     marginBottom: 8,
   },
   inputWrapper: {
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: COLORS.inputBg,
     borderRadius: 8,
     borderWidth: 1,
-    borderColor: COLORS.border,
   },
   inputIcon: {
     paddingLeft: 12,
@@ -806,15 +809,12 @@ const styles = StyleSheet.create({
     height: 50,
     paddingHorizontal: 8,
     fontSize: 16,
-    color: COLORS.text,
   },
   passwordContainer: {
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: COLORS.inputBg,
     borderRadius: 8,
     borderWidth: 1,
-    borderColor: COLORS.border,
   },
   passwordInput: {
     paddingRight: 40,
@@ -828,7 +828,6 @@ const styles = StyleSheet.create({
     marginBottom: 16,
   },
   loginButton: {
-    backgroundColor: COLORS.primary,
     height: 50,
     borderRadius: 8,
     justifyContent: 'center',
@@ -837,7 +836,6 @@ const styles = StyleSheet.create({
     marginBottom: 24,
   },
   loginButtonText: {
-    color: COLORS.secondary,
     fontSize: 16,
     fontWeight: 'bold',
   },
@@ -849,16 +847,13 @@ const styles = StyleSheet.create({
   orLine: {
     flex: 1,
     height: 1,
-    backgroundColor: COLORS.border,
   },
   orText: {
-    color: COLORS.textSecondary,
     marginHorizontal: 10,
     fontSize: 14,
   },
   createAccountButton: {
     borderWidth: 1,
-    borderColor: COLORS.primary,
     height: 50,
     borderRadius: 8,
     justifyContent: 'center',
@@ -866,12 +861,10 @@ const styles = StyleSheet.create({
     marginBottom: 20,
   },
   createAccountText: {
-    color: COLORS.primary,
     fontSize: 16,
     fontWeight: '500',
   },
   forgotPasswordText: {
-    color: COLORS.textSecondary,
     fontSize: 14,
     textAlign: 'center',
   },
@@ -881,15 +874,12 @@ const styles = StyleSheet.create({
     width: '100%',
   },
   successContainer: {
-    backgroundColor: `${COLORS.success}20`,
     borderRadius: 8,
     padding: 12,
     marginBottom: 16,
     borderWidth: 1,
-    borderColor: COLORS.success,
   },
   successText: {
-    color: COLORS.success,
     fontSize: 16,
     fontWeight: '500',
     textAlign: 'center',

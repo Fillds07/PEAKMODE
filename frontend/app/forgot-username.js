@@ -18,22 +18,14 @@ import { DismissKeyboardView } from '../services/keyboardUtils';
 import { Ionicons } from '@expo/vector-icons';
 import Logo from '../services/logoComponent';
 import StandardError from '../services/ErrorDisplay';
-
-// PEAKMODE color theme based on logo
-const COLORS = {
-  primary: '#F7B233', // Yellow/orange from logo
-  secondary: '#FFFFFF', // White for background
-  text: '#333333', // Dark text
-  textSecondary: '#777777', // Secondary text
-  background: '#F5F5F5', // Light gray background
-  cardBg: '#FFFFFF', // White background for cards
-  inputBg: '#F9F9F9', // Light gray for input backgrounds
-  border: '#DDDDDD', // Light gray for borders
-  error: '#FF6B6B', // Red for errors
-  success: '#4CAF50', // Green for success
-}
+import { useTheme } from '../services/themeContext';
+import ThemeToggle from '../components/ThemeToggle';
+import { getThemedStyles } from '../services/themeHelper';
 
 export default function ForgotUsernameScreen() {
+  const { colors, isDarkMode } = useTheme();
+  const themedStyles = getThemedStyles(colors);
+  
   // State
   const [email, setEmail] = useState('');
   const [loading, setLoading] = useState(false);
@@ -167,9 +159,9 @@ export default function ForgotUsernameScreen() {
   // Show loading indicator during initial connectivity check
   if (isConnecting) {
     return (
-      <View style={styles.loadingContainer}>
-        <ActivityIndicator size="large" color={COLORS.primary} />
-        <Text style={styles.loadingText}>Checking connection...</Text>
+      <View style={[styles.loadingContainer, { backgroundColor: colors.background }]}>
+        <ActivityIndicator size="large" color={colors.primary} />
+        <Text style={[styles.loadingText, { color: colors.text }]}>Checking connection...</Text>
       </View>
     );
   }
@@ -179,11 +171,13 @@ export default function ForgotUsernameScreen() {
       behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
       style={styles.keyboardAvoidView}
     >
-      <DismissKeyboardView style={styles.container}>
+      <DismissKeyboardView style={[styles.container, { backgroundColor: colors.background }]}>
         <Animated.View 
           style={[
             styles.card,
             {
+              backgroundColor: colors.cardBg,
+              shadowColor: colors.text,
               opacity: fadeAnim,
               transform: [{ translateY: slideAnim }]
             }
@@ -193,8 +187,8 @@ export default function ForgotUsernameScreen() {
             <Logo width={200} />
           </View>
           
-          <Text style={styles.headerText}>Forgot Username</Text>
-          <Text style={styles.subHeaderText}>
+          <Text style={[styles.headerText, { color: colors.text }]}>Forgot Username</Text>
+          <Text style={[styles.subHeaderText, { color: colors.textSecondary }]}>
             Enter your email address and we'll help you find your username.
           </Text>
           
@@ -206,21 +200,21 @@ export default function ForgotUsernameScreen() {
           
           {username ? (
             <View style={styles.usernameContainer}>
-              <Text style={styles.successMessage}>{successMessage}</Text>
-              <View style={styles.usernameBox}>
-                <Text style={styles.usernameText}>{username}</Text>
+              <Text style={[styles.successMessage, { color: colors.success }]}>{successMessage}</Text>
+              <View style={[styles.usernameBox, { backgroundColor: colors.inputBg, borderColor: colors.primary }]}>
+                <Text style={[styles.usernameText, { color: colors.text }]}>{username}</Text>
               </View>
-              <Text style={styles.noteText}>
+              <Text style={[styles.noteText, { color: colors.textSecondary }]}>
                 Please write down your username and keep it in a safe place.
               </Text>
             </View>
           ) : (
             <View style={styles.inputContainer}>
-              <Text style={styles.label}>Email</Text>
-              <View style={styles.inputWrapper}>
-                <Ionicons name="mail-outline" size={20} color={COLORS.textSecondary} style={styles.inputIcon} />
+              <Text style={[styles.label, { color: colors.text }]}>Email</Text>
+              <View style={[styles.inputWrapper, { backgroundColor: colors.inputBg, borderColor: colors.border }]}>
+                <Ionicons name="mail-outline" size={20} color={colors.textSecondary} style={styles.inputIcon} />
                 <TextInput
-                  style={styles.input}
+                  style={[styles.input, { color: colors.text }]}
                   placeholder="Enter your email"
                   value={email}
                   onChangeText={setEmail}
@@ -228,7 +222,7 @@ export default function ForgotUsernameScreen() {
                   autoCorrect={false}
                   keyboardType="email-address"
                   textContentType="emailAddress"
-                  placeholderTextColor={COLORS.textSecondary}
+                  placeholderTextColor={colors.textSecondary}
                 />
               </View>
             </View>
@@ -236,23 +230,23 @@ export default function ForgotUsernameScreen() {
           
           {!username ? (
             <TouchableOpacity
-              style={styles.primaryButton}
+              style={[styles.primaryButton, { backgroundColor: colors.primary }]}
               onPress={handleFindUsername}
               disabled={loading}
             >
               {loading ? (
-                <ActivityIndicator color="#FFFFFF" />
+                <ActivityIndicator color={colors.secondary} />
               ) : (
-                <Text style={styles.primaryButtonText}>Find Username</Text>
+                <Text style={[styles.primaryButtonText, { color: colors.secondary }]}>Find Username</Text>
               )}
             </TouchableOpacity>
           ) : null}
           
           <TouchableOpacity
-            style={styles.secondaryButton}
+            style={[styles.secondaryButton, { borderColor: colors.primary }]}
             onPress={handleGoBack}
           >
-            <Text style={styles.secondaryButtonText}>
+            <Text style={[styles.secondaryButtonText, { color: colors.primary }]}>
               {username ? 'Back to Login' : 'Back'}
             </Text>
           </TouchableOpacity>
@@ -270,27 +264,22 @@ const styles = StyleSheet.create({
     flex: 1,
     justifyContent: 'center',
     alignItems: 'center',
-    backgroundColor: COLORS.background,
     padding: 20,
   },
   loadingContainer: {
     flex: 1,
     justifyContent: 'center',
     alignItems: 'center',
-    backgroundColor: COLORS.background,
   },
   loadingText: {
     marginTop: 10,
     fontSize: 16,
-    color: COLORS.text,
   },
   card: {
-    backgroundColor: COLORS.cardBg,
     borderRadius: 12,
     width: '100%',
     maxWidth: 400,
     padding: 24,
-    shadowColor: '#000',
     shadowOffset: { width: 0, height: 2 },
     shadowOpacity: 0.1,
     shadowRadius: 5,
@@ -303,13 +292,11 @@ const styles = StyleSheet.create({
   headerText: {
     fontSize: 24,
     fontWeight: 'bold',
-    color: COLORS.text,
     marginBottom: 10,
     textAlign: 'center',
   },
   subHeaderText: {
     fontSize: 16,
-    color: COLORS.textSecondary,
     marginBottom: 24,
     textAlign: 'center',
     lineHeight: 22,
@@ -320,16 +307,13 @@ const styles = StyleSheet.create({
   label: {
     fontSize: 14,
     fontWeight: '500',
-    color: COLORS.text,
     marginBottom: 8,
   },
   inputWrapper: {
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: COLORS.inputBg,
     borderRadius: 8,
     borderWidth: 1,
-    borderColor: COLORS.border,
   },
   inputIcon: {
     paddingLeft: 12,
@@ -340,13 +324,11 @@ const styles = StyleSheet.create({
     height: 50,
     paddingHorizontal: 8,
     fontSize: 16,
-    color: COLORS.text,
   },
   errorMargin: {
     marginBottom: 16,
   },
   primaryButton: {
-    backgroundColor: COLORS.primary,
     height: 50,
     borderRadius: 8,
     justifyContent: 'center',
@@ -355,20 +337,17 @@ const styles = StyleSheet.create({
     marginBottom: 16,
   },
   primaryButtonText: {
-    color: COLORS.secondary,
     fontSize: 16,
     fontWeight: 'bold',
   },
   secondaryButton: {
     borderWidth: 1,
-    borderColor: COLORS.primary,
     height: 50,
     borderRadius: 8,
     justifyContent: 'center',
     alignItems: 'center',
   },
   secondaryButtonText: {
-    color: COLORS.primary,
     fontSize: 16,
     fontWeight: '500',
   },
@@ -378,15 +357,12 @@ const styles = StyleSheet.create({
   },
   successMessage: {
     fontSize: 16,
-    color: COLORS.success,
     marginBottom: 16,
     fontWeight: '500',
   },
   usernameBox: {
-    backgroundColor: COLORS.inputBg,
     borderRadius: 8,
     borderWidth: 1,
-    borderColor: COLORS.primary,
     padding: 16,
     width: '100%',
     alignItems: 'center',
@@ -395,11 +371,9 @@ const styles = StyleSheet.create({
   usernameText: {
     fontSize: 20,
     fontWeight: 'bold',
-    color: COLORS.text,
   },
   noteText: {
     fontSize: 14,
-    color: COLORS.textSecondary,
     textAlign: 'center',
     lineHeight: 20,
   },

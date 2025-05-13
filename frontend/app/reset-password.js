@@ -19,8 +19,13 @@ import { authService } from '../services/api';
 import connectivityService from '../services/connectivity';
 import { Ionicons } from '@expo/vector-icons';
 import Logo from '../services/logoComponent';
+import { useTheme } from '../services/themeContext';
+import ThemeToggle from '../components/ThemeToggle';
+import { getThemedStyles } from '../services/themeHelper';
 
 export default function ResetPasswordScreen() {
+  const { colors, isDarkMode } = useTheme();
+  const themedStyles = getThemedStyles(colors);
   const { token } = useLocalSearchParams();
   const [password, setPassword] = useState('');
   const [confirmPassword, setConfirmPassword] = useState('');
@@ -135,15 +140,15 @@ export default function ResetPasswordScreen() {
   // Render loading indicator during initial connectivity check
   if (isConnecting) {
     return (
-      <View style={styles.loadingContainer}>
-        <ActivityIndicator size="large" color="#0066cc" />
-        <Text style={styles.loadingText}>Checking connection...</Text>
+      <View style={[styles.loadingContainer, { backgroundColor: colors.background }]}>
+        <ActivityIndicator size="large" color={colors.primary} />
+        <Text style={[styles.loadingText, { color: colors.text }]}>Checking connection...</Text>
       </View>
     );
   }
 
   return (
-    <SafeAreaView style={styles.safeArea}>
+    <SafeAreaView style={[styles.safeArea, { backgroundColor: colors.background }]}>
       <KeyboardAvoidingView
         behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
         style={styles.keyboardAvoidView}
@@ -153,35 +158,40 @@ export default function ResetPasswordScreen() {
             <View style={styles.container}>
               <View style={styles.headerContainer}>
                 <Logo width={250} />
-                <Text style={styles.headerText}>Reset Password</Text>
+                <Text style={[styles.headerText, { color: colors.primary }]}>Reset Password</Text>
               </View>
               
               {networkError && (
-                <View style={styles.errorContainer}>
-                  <Text style={styles.errorText}>{error}</Text>
+                <View style={[styles.errorContainer, { backgroundColor: colors.error + '20', borderColor: colors.error }]}>
+                  <Text style={[styles.errorText, { color: colors.error }]}>{error}</Text>
                   <TouchableOpacity 
-                    style={styles.retryButton}
+                    style={[styles.retryButton, { backgroundColor: colors.cardBg }]}
                     onPress={checkConnectivity}
                   >
-                    <Text style={styles.retryText}>Retry Connection</Text>
+                    <Text style={[styles.retryText, { color: colors.primary }]}>Retry Connection</Text>
                   </TouchableOpacity>
                 </View>
               )}
               
               {success ? (
-                <View style={styles.successContainer}>
-                  <Text style={styles.successText}>Your password has been successfully reset!</Text>
-                  <Text style={styles.successSubText}>Redirecting to login page...</Text>
-                  <ActivityIndicator color="#4caf50" style={styles.successIndicator} />
+                <View style={[styles.successContainer, { backgroundColor: colors.success + '20', borderColor: colors.success }]}>
+                  <Text style={[styles.successText, { color: colors.success }]}>Your password has been successfully reset!</Text>
+                  <Text style={[styles.successSubText, { color: colors.success }]}>Redirecting to login page...</Text>
+                  <ActivityIndicator color={colors.success} style={styles.successIndicator} />
                 </View>
               ) : (
                 <View style={styles.formContainer}>
                   <View style={styles.inputContainer}>
-                    <Text style={styles.label}>New Password</Text>
+                    <Text style={[styles.label, { color: colors.text }]}>New Password</Text>
                     <View style={styles.passwordContainer}>
                       <TextInput
-                        style={[styles.input, styles.passwordInput]}
+                        style={[styles.input, styles.passwordInput, { 
+                          backgroundColor: colors.inputBg, 
+                          borderColor: colors.border,
+                          color: colors.text
+                        }]}
                         placeholder="Enter your new password"
+                        placeholderTextColor={colors.textSecondary}
                         value={password}
                         onChangeText={setPassword}
                         secureTextEntry={!showPassword}
@@ -197,18 +207,23 @@ export default function ResetPasswordScreen() {
                         <Ionicons 
                           name={showPassword ? 'eye-off' : 'eye'} 
                           size={24} 
-                          color="#666" 
+                          color={colors.textSecondary} 
                         />
                       </TouchableOpacity>
                     </View>
                   </View>
                   
                   <View style={styles.inputContainer}>
-                    <Text style={styles.label}>Confirm New Password</Text>
+                    <Text style={[styles.label, { color: colors.text }]}>Confirm New Password</Text>
                     <View style={styles.passwordContainer}>
                       <TextInput
-                        style={[styles.input, styles.passwordInput]}
+                        style={[styles.input, styles.passwordInput, { 
+                          backgroundColor: colors.inputBg, 
+                          borderColor: colors.border,
+                          color: colors.text
+                        }]}
                         placeholder="Confirm your new password"
+                        placeholderTextColor={colors.textSecondary}
                         value={confirmPassword}
                         onChangeText={setConfirmPassword}
                         secureTextEntry={!showConfirmPassword}
@@ -224,33 +239,33 @@ export default function ResetPasswordScreen() {
                         <Ionicons 
                           name={showConfirmPassword ? 'eye-off' : 'eye'} 
                           size={24} 
-                          color="#666" 
+                          color={colors.textSecondary} 
                         />
                       </TouchableOpacity>
                     </View>
                   </View>
                   
                   {error && !networkError && (
-                    <Text style={styles.errorText}>{error}</Text>
+                    <Text style={[styles.errorText, { color: colors.error }]}>{error}</Text>
                   )}
                   
                   <TouchableOpacity
-                    style={styles.resetButton}
+                    style={[styles.resetButton, { backgroundColor: colors.primary }]}
                     onPress={handleResetPassword}
                     disabled={loading || !token}
                   >
                     {loading ? (
-                      <ActivityIndicator color="#fff" />
+                      <ActivityIndicator color={colors.secondary} />
                     ) : (
-                      <Text style={styles.resetButtonText}>Reset Password</Text>
+                      <Text style={[styles.resetButtonText, { color: colors.secondary }]}>Reset Password</Text>
                     )}
                   </TouchableOpacity>
                   
                   <TouchableOpacity
-                    style={styles.cancelButton}
+                    style={[styles.cancelButton, { backgroundColor: colors.inputBg }]}
                     onPress={handleGoBack}
                   >
-                    <Text style={styles.cancelButtonText}>Cancel</Text>
+                    <Text style={[styles.cancelButtonText, { color: colors.text }]}>Cancel</Text>
                   </TouchableOpacity>
                 </View>
               )}
@@ -265,7 +280,6 @@ export default function ResetPasswordScreen() {
 const styles = StyleSheet.create({
   safeArea: {
     flex: 1,
-    backgroundColor: '#fff',
   },
   keyboardAvoidView: {
     flex: 1,
@@ -281,12 +295,10 @@ const styles = StyleSheet.create({
     flex: 1,
     justifyContent: 'center',
     alignItems: 'center',
-    backgroundColor: '#fff',
   },
   loadingText: {
     marginTop: 10,
     fontSize: 16,
-    color: '#333',
   },
   headerContainer: {
     alignItems: 'center',
@@ -296,12 +308,10 @@ const styles = StyleSheet.create({
   headerText: {
     fontSize: 28,
     fontWeight: 'bold',
-    color: '#0066cc',
     marginBottom: 10,
   },
   subHeaderText: {
     fontSize: 16,
-    color: '#666',
     textAlign: 'center',
   },
   formContainer: {
@@ -314,42 +324,33 @@ const styles = StyleSheet.create({
     fontSize: 16,
     marginBottom: 8,
     fontWeight: '500',
-    color: '#333',
   },
   input: {
     height: 50,
     borderWidth: 1,
-    borderColor: '#ddd',
     borderRadius: 8,
     paddingHorizontal: 15,
     fontSize: 16,
-    backgroundColor: '#f9f9f9',
   },
   errorContainer: {
-    backgroundColor: '#ffebee',
     padding: 15,
     borderRadius: 8,
     marginBottom: 20,
     borderWidth: 1,
-    borderColor: '#ffcdd2',
   },
   errorText: {
-    color: '#d32f2f',
     textAlign: 'center',
     marginBottom: 16,
   },
   retryButton: {
-    backgroundColor: '#f5f5f5',
     padding: 10,
     borderRadius: 5,
     alignItems: 'center',
   },
   retryText: {
-    color: '#0066cc',
     fontWeight: '500',
   },
   resetButton: {
-    backgroundColor: '#0066cc',
     height: 50,
     borderRadius: 8,
     justifyContent: 'center',
@@ -358,39 +359,32 @@ const styles = StyleSheet.create({
     marginBottom: 15,
   },
   resetButtonText: {
-    color: '#fff',
     fontSize: 16,
     fontWeight: 'bold',
   },
   cancelButton: {
-    backgroundColor: '#f5f5f5',
     height: 50,
     borderRadius: 8,
     justifyContent: 'center',
     alignItems: 'center',
   },
   cancelButtonText: {
-    color: '#666',
     fontSize: 16,
   },
   successContainer: {
     padding: 25,
-    backgroundColor: '#e8f5e9',
     borderRadius: 8,
     alignItems: 'center',
     marginTop: 20,
     borderWidth: 1,
-    borderColor: '#c8e6c9',
   },
   successText: {
-    color: '#2e7d32',
     fontSize: 18,
     fontWeight: 'bold',
     textAlign: 'center',
     marginBottom: 10,
   },
   successSubText: {
-    color: '#388e3c',
     fontSize: 14,
     textAlign: 'center',
     marginBottom: 20,
@@ -405,8 +399,6 @@ const styles = StyleSheet.create({
   },
   passwordInput: {
     flex: 1,
-    backgroundColor: '#ffffff',
-    color: '#000000',
     paddingRight: 50,
   },
   passwordToggle: {

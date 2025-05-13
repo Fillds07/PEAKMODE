@@ -16,7 +16,8 @@ import {
   FlatList,
   Pressable,
   TouchableWithoutFeedback,
-  Keyboard
+  Keyboard,
+  Switch
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { router } from 'expo-router';
@@ -26,6 +27,8 @@ import { Ionicons } from '@expo/vector-icons';
 import { useAuth } from '../services/authContext';
 import { withAuth } from '../services/authContext';
 import { Picker } from '@react-native-picker/picker';
+import { useTheme } from '../services/themeContext';
+import ThemeToggle from '../components/ThemeToggle';
 
 // PEAKMODE color theme based on logo
 const COLORS = {
@@ -49,38 +52,40 @@ const CustomDropdown = ({
   placeholder = "Select a security question"
 }) => {
   const [isOpen, setIsOpen] = useState(false);
+  const { colors } = useTheme();
   
   const selectedOption = selectedValue ? 
     options.find(option => option.id === selectedValue) : 
     null;
   
   return (
-    <View style={styles.customDropdownContainer}>
+    <View style={[styles.customDropdownContainer, { borderColor: colors.border, backgroundColor: colors.inputBg }]}>
       <TouchableOpacity 
-        style={styles.customDropdownHeader}
+        style={[styles.customDropdownHeader, { borderColor: colors.border }]}
         onPress={() => setIsOpen(!isOpen)}
       >
         <Text style={[
           styles.customDropdownHeaderText,
-          !selectedOption && styles.customDropdownPlaceholder
+          !selectedOption && styles.customDropdownPlaceholder,
+          { color: selectedOption ? colors.text : colors.textSecondary }
         ]}>
           {selectedOption ? selectedOption.question : placeholder}
         </Text>
         <Ionicons 
           name={isOpen ? "chevron-up" : "chevron-down"} 
           size={24} 
-          color={COLORS.text} 
+          color={colors.text} 
         />
       </TouchableOpacity>
       
       {isOpen && (
-        <View style={styles.customDropdownOptions}>
+        <View style={[styles.customDropdownOptions, { backgroundColor: colors.cardBg, borderColor: colors.border }]}>
           {options.map(option => (
             <TouchableOpacity
               key={option.id}
               style={[
                 styles.customDropdownOption,
-                selectedValue === option.id && styles.customDropdownOptionSelected
+                selectedValue === option.id && [styles.customDropdownOptionSelected, { backgroundColor: colors.primary + '20' }]
               ]}
               onPress={() => {
                 onSelect(option.id);
@@ -89,12 +94,13 @@ const CustomDropdown = ({
             >
               <Text style={[
                 styles.customDropdownOptionText,
-                selectedValue === option.id && styles.customDropdownOptionTextSelected
+                { color: colors.text },
+                selectedValue === option.id && [styles.customDropdownOptionTextSelected, { color: colors.primary }]
               ]}>
                 {option.question}
               </Text>
               {selectedValue === option.id && (
-                <Ionicons name="checkmark" size={20} color={COLORS.primary} />
+                <Ionicons name="checkmark" size={20} color={colors.primary} />
               )}
             </TouchableOpacity>
           ))}
@@ -105,6 +111,7 @@ const CustomDropdown = ({
 };
 
 function ProfileScreen() {
+  const { colors, isDarkMode, toggleTheme } = useTheme();
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [userData, setUserData] = useState(null);
@@ -713,115 +720,123 @@ function ProfileScreen() {
 
   // Main render function
   return (
-    <SafeAreaView style={styles.safeArea}>
+    <SafeAreaView style={[styles.safeArea, { backgroundColor: colors.background }]}>
       <ScrollView 
-        style={styles.container}
+        style={[styles.container, { backgroundColor: colors.background }]}
+        contentContainerStyle={styles.contentContainer}
         refreshControl={
           <RefreshControl
             refreshing={refreshing}
             onRefresh={onRefresh}
-            colors={[COLORS.primary]}
-            tintColor={COLORS.primary}
+            colors={[colors.primary]}
+            tintColor={colors.primary}
           />
         }
       >
         {loading && !userData ? (
           <View style={styles.loadingContainer}>
-            <ActivityIndicator size="large" color={COLORS.primary} />
-            <Text style={styles.loadingText}>Loading profile...</Text>
+            <ActivityIndicator size="large" color={colors.primary} />
+            <Text style={[styles.loadingText, { color: colors.textSecondary }]}>Loading profile...</Text>
           </View>
         ) : error && !userData ? (
           <View style={styles.errorContainer}>
-            <Ionicons name="alert-circle-outline" size={60} color={COLORS.error} />
-            <Text style={styles.errorText}>{error}</Text>
+            <Ionicons name="alert-circle-outline" size={60} color={colors.error} />
+            <Text style={[styles.errorText, { color: colors.error }]}>{error}</Text>
             <TouchableOpacity 
-              style={styles.retryButton}
+              style={[styles.retryButton, { backgroundColor: colors.primary }]}
               onPress={() => fetchUserProfile(true)}
             >
-              <Text style={styles.retryButtonText}>Retry</Text>
+              <Text style={[styles.retryButtonText, { color: colors.secondary }]}>Retry</Text>
             </TouchableOpacity>
           </View>
         ) : (
           <>
             {/* Header with user avatar */}
-            <View style={styles.header}>
-              <View style={styles.avatarContainer}>
-                <Text style={styles.avatarText}>{getInitial()}</Text>
+            <View style={[styles.header, { backgroundColor: colors.cardBg }]}>
+              <View style={[styles.avatarContainer, { backgroundColor: colors.primary }]}>
+                <Text style={[styles.avatarText, { color: colors.secondary }]}>{getInitial()}</Text>
               </View>
               <View style={styles.headerTextContainer}>
-                <Text style={styles.userName}>{userData?.name || 'User'}</Text>
-                <Text style={styles.userInfo}>@{userData?.username || 'username'}</Text>
+                <Text style={[styles.userName, { color: colors.text }]}>{userData?.name || 'User'}</Text>
+                <Text style={[styles.userInfo, { color: colors.textSecondary }]}>@{userData?.username || 'username'}</Text>
                 {error ? (
-                  <Text style={styles.cacheNotice}>{error}</Text>
+                  <Text style={[styles.cacheNotice, { color: colors.textSecondary }]}>{error}</Text>
                 ) : null}
               </View>
             </View>
             
             {/* Profile details */}
-            <View style={styles.card}>
-              <Text style={styles.sectionTitle}>Account Details</Text>
+            <View style={[styles.card, { backgroundColor: colors.cardBg }]}>
+              <Text style={[styles.sectionTitle, { color: colors.text }]}>Account Details</Text>
               
               <View style={styles.profileItem}>
-                <Ionicons name="mail-outline" size={20} color={COLORS.primary} />
-                <Text style={styles.profileLabel}>Email:</Text>
-                <Text style={styles.profileValue}>{userData?.email || 'Not set'}</Text>
+                <Ionicons name="mail-outline" size={20} color={colors.primary} />
+                <Text style={[styles.profileLabel, { color: colors.text }]}>Email:</Text>
+                <Text style={[styles.profileValue, { color: colors.textSecondary }]}>{userData?.email || 'Not set'}</Text>
               </View>
               
               <View style={styles.profileItem}>
-                <Ionicons name="call-outline" size={20} color={COLORS.primary} />
-                <Text style={styles.profileLabel}>Phone:</Text>
-                <Text style={styles.profileValue}>
+                <Ionicons name="call-outline" size={20} color={colors.primary} />
+                <Text style={[styles.profileLabel, { color: colors.text }]}>Phone:</Text>
+                <Text style={[styles.profileValue, { color: colors.textSecondary }]}>
                   {userData?.phone ? formatPhoneForDisplay(userData.phone) : 'Not set'}
                 </Text>
               </View>
               
               <TouchableOpacity 
-                style={styles.editButton}
+                style={[styles.editButton, { backgroundColor: colors.primary }]}
                 onPress={handleOpenEditProfile}
               >
-                <Ionicons name="create-outline" size={20} color="#FFFFFF" />
-                <Text style={styles.editButtonText}>Edit Profile</Text>
+                <Ionicons name="create-outline" size={20} color={colors.secondary} />
+                <Text style={[styles.editButtonText, { color: colors.secondary }]}>Edit Profile</Text>
               </TouchableOpacity>
             </View>
             
+            {/* Appearance section */}
+            <View style={[styles.card, { backgroundColor: colors.cardBg }]}>
+              <Text style={[styles.sectionTitle, { color: colors.text }]}>Appearance</Text>
+              
+              <ThemeToggle variant="switch" />
+            </View>
+            
             {/* Account Management section */}
-            <View style={styles.card}>
-              <Text style={styles.sectionTitle}>Account Management</Text>
+            <View style={[styles.card, { backgroundColor: colors.cardBg }]}>
+              <Text style={[styles.sectionTitle, { color: colors.text }]}>Account Management</Text>
               
               <TouchableOpacity 
-                style={styles.accountButton}
+                style={[styles.accountButton, { borderBottomColor: colors.border }]}
                 onPress={handleOpenChangePassword}
               >
-                <Ionicons name="lock-closed-outline" size={24} color={COLORS.text} />
-                <Text style={styles.accountButtonText}>Change Password</Text>
-                <Ionicons name="chevron-forward" size={24} color={COLORS.textSecondary} />
+                <Ionicons name="lock-closed-outline" size={24} color={colors.text} />
+                <Text style={[styles.accountButtonText, { color: colors.text }]}>Change Password</Text>
+                <Ionicons name="chevron-forward" size={24} color={colors.textSecondary} />
               </TouchableOpacity>
               
               <TouchableOpacity 
-                style={styles.accountButton}
+                style={[styles.accountButton, { borderBottomColor: colors.border }]}
                 onPress={handleOpenSecurityQuestions}
               >
-                <Ionicons name="shield-checkmark-outline" size={24} color={COLORS.text} />
-                <Text style={styles.accountButtonText}>Manage Security Questions</Text>
-                <Ionicons name="chevron-forward" size={24} color={COLORS.textSecondary} />
+                <Ionicons name="shield-checkmark-outline" size={24} color={colors.text} />
+                <Text style={[styles.accountButtonText, { color: colors.text }]}>Manage Security Questions</Text>
+                <Ionicons name="chevron-forward" size={24} color={colors.textSecondary} />
               </TouchableOpacity>
               
               <TouchableOpacity 
-                style={styles.accountButton}
+                style={[styles.accountButton, { borderBottomColor: colors.border }]}
                 onPress={handleLogout}
               >
-                <Ionicons name="log-out-outline" size={24} color={COLORS.text} />
-                <Text style={styles.accountButtonText}>Logout</Text>
-                <Ionicons name="chevron-forward" size={24} color={COLORS.textSecondary} />
+                <Ionicons name="log-out-outline" size={24} color={colors.text} />
+                <Text style={[styles.accountButtonText, { color: colors.text }]}>Logout</Text>
+                <Ionicons name="chevron-forward" size={24} color={colors.textSecondary} />
               </TouchableOpacity>
               
               <TouchableOpacity 
                 style={[styles.accountButton, styles.deleteButton]}
                 onPress={handleDeleteAccount}
               >
-                <Ionicons name="trash-outline" size={24} color={COLORS.error} />
-                <Text style={[styles.accountButtonText, styles.deleteText]}>Delete Account</Text>
-                <Ionicons name="chevron-forward" size={24} color={COLORS.textSecondary} />
+                <Ionicons name="trash-outline" size={24} color={colors.error} />
+                <Text style={[styles.accountButtonText, styles.deleteText, { color: colors.error }]}>Delete Account</Text>
+                <Ionicons name="chevron-forward" size={24} color={colors.textSecondary} />
               </TouchableOpacity>
             </View>
           </>
@@ -838,74 +853,78 @@ function ProfileScreen() {
           behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
           style={styles.modalContainer}
         >
-          <View style={styles.modalContent}>
+          <View style={[styles.modalContent, { backgroundColor: colors.cardBg }]}>
             <View style={styles.modalHeader}>
-              <Text style={styles.modalTitle}>Edit Profile</Text>
+              <Text style={[styles.modalTitle, { color: colors.text }]}>Edit Profile</Text>
               <TouchableOpacity onPress={handleCloseEditProfile}>
-                <Ionicons name="close" size={24} color={COLORS.text} />
+                <Ionicons name="close" size={24} color={colors.text} />
               </TouchableOpacity>
             </View>
             
             {editError ? (
-              <Text style={styles.modalError}>{editError}</Text>
+              <Text style={[styles.modalError, { color: colors.error, backgroundColor: colors.error + '10' }]}>{editError}</Text>
             ) : null}
             
             <View style={styles.formGroup}>
-              <Text style={styles.label}>Name</Text>
+              <Text style={[styles.label, { color: colors.text }]}>Name</Text>
               <TextInput
-                style={styles.input}
+                style={[styles.input, { backgroundColor: colors.inputBg, borderColor: colors.border, color: colors.text }]}
                 value={editName}
                 onChangeText={setEditName}
                 placeholder="Your name"
+                placeholderTextColor={colors.textSecondary}
                 autoCapitalize="words"
               />
             </View>
             
             <View style={styles.formGroup}>
-              <Text style={styles.label}>Email</Text>
+              <Text style={[styles.label, { color: colors.text }]}>Email</Text>
               <TextInput
-                style={styles.input}
+                style={[styles.input, { backgroundColor: colors.inputBg, borderColor: colors.border, color: colors.text }]}
                 value={editEmail}
                 onChangeText={setEditEmail}
                 placeholder="your@email.com"
+                placeholderTextColor={colors.textSecondary}
                 keyboardType="email-address"
                 autoCapitalize="none"
               />
             </View>
             
             <View style={styles.formGroup}>
-              <Text style={styles.label}>Phone</Text>
+              <Text style={[styles.label, { color: colors.text }]}>Phone</Text>
               <TextInput
-                style={styles.input}
+                style={[styles.input, { backgroundColor: colors.inputBg, borderColor: colors.border, color: colors.text }]}
                 value={editPhone}
                 onChangeText={setEditPhone}
                 placeholder="Your phone number"
+                placeholderTextColor={colors.textSecondary}
                 keyboardType="phone-pad"
               />
             </View>
             
             <View style={styles.formGroup}>
-              <Text style={styles.label}>Username</Text>
+              <Text style={[styles.label, { color: colors.text }]}>Username</Text>
               <TextInput
-                style={styles.input}
+                style={[styles.input, { backgroundColor: colors.inputBg, borderColor: colors.border, color: colors.text }]}
                 value={editUsername}
                 onChangeText={setEditUsername}
                 placeholder="Your username"
+                placeholderTextColor={colors.textSecondary}
                 autoCapitalize="none"
               />
             </View>
             
             <TouchableOpacity 
-              style={styles.saveButton}
+              style={[styles.saveButton, { backgroundColor: colors.primary }]}
               onPress={handleSaveProfile}
               disabled={editLoading}
             >
               {editLoading ? (
-                <ActivityIndicator size="small" color="#FFFFFF" />
+                <ActivityIndicator size="small" color={colors.secondary} />
               ) : (
                 <>
-                  <Ionicons name="save-outline" size={20} color="#FFFFFF" />
-                  <Text style={styles.saveButtonText}>Save Changes</Text>
+                  <Ionicons name="save-outline" size={20} color={colors.secondary} />
+                  <Text style={[styles.saveButtonText, { color: colors.secondary }]}>Save Changes</Text>
                 </>
               )}
             </TouchableOpacity>
@@ -923,26 +942,27 @@ function ProfileScreen() {
           behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
           style={styles.modalContainer}
         >
-          <View style={styles.modalContent}>
+          <View style={[styles.modalContent, { backgroundColor: colors.cardBg }]}>
             <View style={styles.modalHeader}>
-              <Text style={styles.modalTitle}>Change Password</Text>
+              <Text style={[styles.modalTitle, { color: colors.text }]}>Change Password</Text>
               <TouchableOpacity onPress={handleCloseChangePassword}>
-                <Ionicons name="close" size={24} color={COLORS.text} />
+                <Ionicons name="close" size={24} color={colors.text} />
               </TouchableOpacity>
             </View>
             
             {passwordError ? (
-              <Text style={styles.modalError}>{passwordError}</Text>
+              <Text style={[styles.modalError, { color: colors.error, backgroundColor: colors.error + '10' }]}>{passwordError}</Text>
             ) : null}
             
             <View style={styles.formGroup}>
-              <Text style={styles.label}>Current Password</Text>
-              <View style={styles.passwordContainer}>
+              <Text style={[styles.label, { color: colors.text }]}>Current Password</Text>
+              <View style={[styles.passwordContainer, { backgroundColor: colors.inputBg, borderColor: colors.border }]}>
                 <TextInput
-                  style={styles.passwordInput}
+                  style={[styles.passwordInput, { color: colors.text }]}
                   value={currentPassword}
                   onChangeText={setCurrentPassword}
                   placeholder="Enter current password"
+                  placeholderTextColor={colors.textSecondary}
                   secureTextEntry={!showCurrentPassword}
                 />
                 <TouchableOpacity 
@@ -952,20 +972,21 @@ function ProfileScreen() {
                   <Ionicons 
                     name={showCurrentPassword ? "eye-off-outline" : "eye-outline"} 
                     size={24} 
-                    color={COLORS.textSecondary} 
+                    color={colors.textSecondary} 
                   />
                 </TouchableOpacity>
               </View>
             </View>
             
             <View style={styles.formGroup}>
-              <Text style={styles.label}>New Password</Text>
-              <View style={styles.passwordContainer}>
+              <Text style={[styles.label, { color: colors.text }]}>New Password</Text>
+              <View style={[styles.passwordContainer, { backgroundColor: colors.inputBg, borderColor: colors.border }]}>
                 <TextInput
-                  style={styles.passwordInput}
+                  style={[styles.passwordInput, { color: colors.text }]}
                   value={newPassword}
                   onChangeText={setNewPassword}
                   placeholder="Enter new password"
+                  placeholderTextColor={colors.textSecondary}
                   secureTextEntry={!showNewPassword}
                 />
                 <TouchableOpacity 
@@ -975,20 +996,21 @@ function ProfileScreen() {
                   <Ionicons 
                     name={showNewPassword ? "eye-off-outline" : "eye-outline"} 
                     size={24} 
-                    color={COLORS.textSecondary} 
+                    color={colors.textSecondary} 
                   />
                 </TouchableOpacity>
               </View>
             </View>
             
             <View style={styles.formGroup}>
-              <Text style={styles.label}>Confirm New Password</Text>
-              <View style={styles.passwordContainer}>
+              <Text style={[styles.label, { color: colors.text }]}>Confirm New Password</Text>
+              <View style={[styles.passwordContainer, { backgroundColor: colors.inputBg, borderColor: colors.border }]}>
                 <TextInput
-                  style={styles.passwordInput}
+                  style={[styles.passwordInput, { color: colors.text }]}
                   value={confirmPassword}
                   onChangeText={setConfirmPassword}
                   placeholder="Confirm new password"
+                  placeholderTextColor={colors.textSecondary}
                   secureTextEntry={!showConfirmPassword}
                 />
                 <TouchableOpacity 
@@ -998,27 +1020,27 @@ function ProfileScreen() {
                   <Ionicons 
                     name={showConfirmPassword ? "eye-off-outline" : "eye-outline"} 
                     size={24} 
-                    color={COLORS.textSecondary} 
+                    color={colors.textSecondary} 
                   />
                 </TouchableOpacity>
               </View>
             </View>
             
-            <Text style={styles.passwordRequirements}>
+            <Text style={[styles.passwordRequirements, { color: colors.textSecondary }]}>
               Password must contain at least 8 characters, including uppercase, lowercase, number and special character.
             </Text>
             
             <TouchableOpacity 
-              style={styles.saveButton}
+              style={[styles.saveButton, { backgroundColor: colors.primary }]}
               onPress={handleSavePassword}
               disabled={passwordLoading}
             >
               {passwordLoading ? (
-                <ActivityIndicator size="small" color="#FFFFFF" />
+                <ActivityIndicator size="small" color={colors.secondary} />
               ) : (
                 <>
-                  <Ionicons name="save-outline" size={20} color="#FFFFFF" />
-                  <Text style={styles.saveButtonText}>Change Password</Text>
+                  <Ionicons name="save-outline" size={20} color={colors.secondary} />
+                  <Text style={[styles.saveButtonText, { color: colors.secondary }]}>Change Password</Text>
                 </>
               )}
             </TouchableOpacity>
@@ -1036,24 +1058,24 @@ function ProfileScreen() {
           behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
           style={styles.modalContainer}
         >
-          <View style={styles.securityModalContent}>
+          <View style={[styles.securityModalContent, { backgroundColor: colors.cardBg }]}>
             <TouchableWithoutFeedback onPress={() => {
               // Close any open dropdowns when tapping outside
               Keyboard.dismiss();
             }}>
               <View>
                 <View style={styles.modalHeader}>
-                  <Text style={styles.modalTitle}>Security Questions</Text>
+                  <Text style={[styles.modalTitle, { color: colors.text }]}>Security Questions</Text>
                   <TouchableOpacity onPress={handleCloseSecurityQuestions}>
-                    <Ionicons name="close" size={24} color={COLORS.text} />
+                    <Ionicons name="close" size={24} color={colors.text} />
                   </TouchableOpacity>
                 </View>
                 
                 {securityError ? (
-                  <Text style={styles.modalError}>{securityError}</Text>
+                  <Text style={[styles.modalError, { color: colors.error, backgroundColor: colors.error + '10' }]}>{securityError}</Text>
                 ) : null}
                 
-                <Text style={styles.modalDescription}>
+                <Text style={[styles.modalDescription, { color: colors.text }]}>
                   Select 3 security questions and provide answers. These will be used to reset your password if needed.
                 </Text>
               </View>
@@ -1061,14 +1083,14 @@ function ProfileScreen() {
             
             {loadingQuestions ? (
               <View style={styles.loadingContainer}>
-                <ActivityIndicator size="large" color={COLORS.primary} />
-                <Text style={styles.loadingText}>Loading security questions...</Text>
+                <ActivityIndicator size="large" color={colors.primary} />
+                <Text style={[styles.loadingText, { color: colors.textSecondary }]}>Loading security questions...</Text>
               </View>
             ) : (
               <ScrollView style={styles.questionsContainer}>
                 {/* Question 1 */}
                 <View style={styles.questionSection}>
-                  <Text style={styles.questionNumber}>Question 1</Text>
+                  <Text style={[styles.questionNumber, { color: colors.text }]}>Question 1</Text>
                   
                   <CustomDropdown
                     options={securityQuestions}
@@ -1087,20 +1109,21 @@ function ProfileScreen() {
                     }}
                   />
                   
-                  <Text style={styles.answerLabel}>Answer</Text>
+                  <Text style={[styles.answerLabel, { color: colors.text }]}>Answer</Text>
                   <TextInput
-                    style={styles.answerInput}
+                    style={[styles.answerInput, { backgroundColor: colors.inputBg, borderColor: colors.border, color: colors.text }]}
                     placeholder="Your answer"
+                    placeholderTextColor={colors.textSecondary}
                     value={selectedQuestions[0]?.answer || ''}
                     onChangeText={(text) => handleAnswerChange(0, text)}
                   />
                 </View>
                 
-                <View style={styles.questionSeparator} />
+                <View style={[styles.questionSeparator, { backgroundColor: colors.border }]} />
                 
                 {/* Question 2 */}
                 <View style={styles.questionSection}>
-                  <Text style={styles.questionNumber}>Question 2</Text>
+                  <Text style={[styles.questionNumber, { color: colors.text }]}>Question 2</Text>
                   
                   <CustomDropdown
                     options={securityQuestions}
@@ -1119,20 +1142,21 @@ function ProfileScreen() {
                     }}
                   />
                   
-                  <Text style={styles.answerLabel}>Answer</Text>
+                  <Text style={[styles.answerLabel, { color: colors.text }]}>Answer</Text>
                   <TextInput
-                    style={styles.answerInput}
+                    style={[styles.answerInput, { backgroundColor: colors.inputBg, borderColor: colors.border, color: colors.text }]}
                     placeholder="Your answer"
+                    placeholderTextColor={colors.textSecondary}
                     value={selectedQuestions[1]?.answer || ''}
                     onChangeText={(text) => handleAnswerChange(1, text)}
                   />
                 </View>
                 
-                <View style={styles.questionSeparator} />
+                <View style={[styles.questionSeparator, { backgroundColor: colors.border }]} />
                 
                 {/* Question 3 */}
                 <View style={styles.questionSection}>
-                  <Text style={styles.questionNumber}>Question 3</Text>
+                  <Text style={[styles.questionNumber, { color: colors.text }]}>Question 3</Text>
                   
                   <CustomDropdown
                     options={securityQuestions}
@@ -1151,10 +1175,11 @@ function ProfileScreen() {
                     }}
                   />
                   
-                  <Text style={styles.answerLabel}>Answer</Text>
+                  <Text style={[styles.answerLabel, { color: colors.text }]}>Answer</Text>
                   <TextInput
-                    style={styles.answerInput}
+                    style={[styles.answerInput, { backgroundColor: colors.inputBg, borderColor: colors.border, color: colors.text }]}
                     placeholder="Your answer"
+                    placeholderTextColor={colors.textSecondary}
                     value={selectedQuestions[2]?.answer || ''}
                     onChangeText={(text) => handleAnswerChange(2, text)}
                   />
@@ -1163,16 +1188,16 @@ function ProfileScreen() {
             )}
             
             <TouchableOpacity 
-              style={styles.saveButton}
+              style={[styles.saveButton, { backgroundColor: colors.primary }]}
               onPress={handleSaveSecurityQuestions}
               disabled={loadingQuestions || savingQuestions}
             >
               {savingQuestions ? (
-                <ActivityIndicator size="small" color="#FFFFFF" />
+                <ActivityIndicator size="small" color={colors.secondary} />
               ) : (
                 <>
-                  <Ionicons name="save-outline" size={20} color="#FFFFFF" />
-                  <Text style={styles.saveButtonText}>Save Security Questions</Text>
+                  <Ionicons name="save-outline" size={20} color={colors.secondary} />
+                  <Text style={[styles.saveButtonText, { color: colors.secondary }]}>Save Security Questions</Text>
                 </>
               )}
             </TouchableOpacity>
@@ -1189,7 +1214,6 @@ export default withAuth(ProfileScreen);
 const styles = StyleSheet.create({
   safeArea: {
     flex: 1,
-    backgroundColor: COLORS.background,
   },
   container: {
     flex: 1,
@@ -1204,7 +1228,6 @@ const styles = StyleSheet.create({
   loadingText: {
     marginTop: 16,
     fontSize: 16,
-    color: COLORS.textSecondary,
   },
   errorContainer: {
     flex: 1,
@@ -1215,30 +1238,25 @@ const styles = StyleSheet.create({
   errorText: {
     marginTop: 16,
     fontSize: 16,
-    color: COLORS.error,
     textAlign: 'center',
     marginBottom: 20,
   },
   retryButton: {
-    backgroundColor: COLORS.primary,
     paddingHorizontal: 20,
     paddingVertical: 10,
     borderRadius: 8,
   },
   retryButtonText: {
-    color: COLORS.secondary,
     fontWeight: 'bold',
   },
   cacheNotice: {
     fontSize: 12,
-    color: COLORS.textSecondary,
     fontStyle: 'italic',
     marginTop: 4,
   },
   header: {
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: COLORS.cardBg,
     padding: 16,
     borderRadius: 12,
     marginBottom: 16,
@@ -1252,7 +1270,6 @@ const styles = StyleSheet.create({
     width: 80,
     height: 80,
     borderRadius: 40,
-    backgroundColor: COLORS.primary,
     justifyContent: 'center',
     alignItems: 'center',
     marginRight: 16,
@@ -1260,7 +1277,6 @@ const styles = StyleSheet.create({
   avatarText: {
     fontSize: 36,
     fontWeight: 'bold',
-    color: COLORS.secondary,
   },
   headerTextContainer: {
     flex: 1,
@@ -1268,16 +1284,13 @@ const styles = StyleSheet.create({
   userName: {
     fontSize: 24,
     fontWeight: 'bold',
-    color: COLORS.text,
     marginBottom: 4,
   },
   userInfo: {
     fontSize: 16,
-    color: COLORS.textSecondary,
   },
   
   card: {
-    backgroundColor: COLORS.cardBg,
     padding: 16,
     borderRadius: 12,
     marginBottom: 16,
@@ -1290,7 +1303,6 @@ const styles = StyleSheet.create({
   sectionTitle: {
     fontSize: 18,
     fontWeight: 'bold',
-    color: COLORS.text,
     marginBottom: 16,
   },
   profileItem: {
@@ -1301,18 +1313,31 @@ const styles = StyleSheet.create({
   profileLabel: {
     fontSize: 16,
     fontWeight: '600',
-    color: COLORS.text,
     marginLeft: 10,
     width: 80,
   },
   profileValue: {
     flex: 1,
     fontSize: 16,
-    color: COLORS.textSecondary,
+  },
+  
+  themeToggleContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    marginBottom: 10,
+    paddingVertical: 8,
+  },
+  themeToggleTextContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+  },
+  themeToggleText: {
+    fontSize: 16,
+    marginLeft: 12,
   },
   
   editButton: {
-    backgroundColor: COLORS.primary,
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
@@ -1321,7 +1346,6 @@ const styles = StyleSheet.create({
     marginTop: 8,
   },
   editButtonText: {
-    color: COLORS.secondary,
     fontWeight: 'bold',
     fontSize: 16,
     marginLeft: 8,
@@ -1332,19 +1356,17 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     paddingVertical: 14,
     borderBottomWidth: 1,
-    borderBottomColor: COLORS.border,
   },
   accountButtonText: {
     flex: 1,
     fontSize: 16,
-    color: COLORS.text,
     marginLeft: 16,
   },
   deleteButton: {
     borderBottomWidth: 0,
   },
   deleteText: {
-    color: COLORS.error,
+    color: '#FF6B6B',
   },
   
   modalContainer: {
@@ -1353,7 +1375,6 @@ const styles = StyleSheet.create({
     backgroundColor: 'rgba(0,0,0,0.5)',
   },
   modalContent: {
-    backgroundColor: COLORS.cardBg,
     padding: 20,
     borderTopLeftRadius: 20,
     borderTopRightRadius: 20,
@@ -1368,14 +1389,11 @@ const styles = StyleSheet.create({
   modalTitle: {
     fontSize: 20,
     fontWeight: 'bold',
-    color: COLORS.text,
   },
   modalError: {
-    color: COLORS.error,
     marginBottom: 16,
     padding: 8,
     borderRadius: 4,
-    backgroundColor: 'rgba(255, 107, 107, 0.1)',
   },
   
   formGroup: {
@@ -1383,30 +1401,24 @@ const styles = StyleSheet.create({
   },
   label: {
     fontSize: 16,
-    color: COLORS.text,
     marginBottom: 8,
   },
   input: {
-    backgroundColor: COLORS.inputBg,
     padding: 12,
     borderRadius: 8,
     fontSize: 16,
     borderWidth: 1,
-    borderColor: COLORS.border,
   },
   helperText: {
     fontSize: 12,
-    color: COLORS.textSecondary,
     marginTop: 4,
   },
   
   passwordContainer: {
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: COLORS.inputBg,
     borderRadius: 8,
     borderWidth: 1,
-    borderColor: COLORS.border,
   },
   passwordInput: {
     flex: 1,
@@ -1418,13 +1430,11 @@ const styles = StyleSheet.create({
   },
   passwordRequirements: {
     fontSize: 12,
-    color: COLORS.textSecondary,
     marginBottom: 16,
     lineHeight: 18,
   },
   
   saveButton: {
-    backgroundColor: COLORS.primary,
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
@@ -1433,7 +1443,6 @@ const styles = StyleSheet.create({
     marginTop: 8,
   },
   saveButtonText: {
-    color: COLORS.secondary,
     fontWeight: 'bold',
     fontSize: 16,
     marginLeft: 8,
@@ -1441,7 +1450,6 @@ const styles = StyleSheet.create({
   
   modalDescription: {
     fontSize: 16,
-    color: COLORS.text,
     marginBottom: 16,
   },
   
@@ -1454,20 +1462,16 @@ const styles = StyleSheet.create({
   },
   questionSeparator: {
     height: 1,
-    backgroundColor: COLORS.border,
     marginVertical: 8,
   },
   questionNumber: {
     fontSize: 18,
     fontWeight: 'bold',
-    color: COLORS.text,
     marginBottom: 12,
   },
   pickerContainer: {
     borderWidth: 1,
-    borderColor: COLORS.border,
     borderRadius: 8,
-    backgroundColor: COLORS.inputBg,
     marginBottom: 16,
     overflow: 'hidden',
   },
@@ -1478,154 +1482,61 @@ const styles = StyleSheet.create({
   answerLabel: {
     fontSize: 16,
     fontWeight: 'bold',
-    color: COLORS.text,
     marginBottom: 8,
   },
   answerInput: {
-    backgroundColor: COLORS.inputBg,
     padding: 12,
     borderRadius: 8,
     fontSize: 16,
     borderWidth: 1,
-    borderColor: COLORS.border,
     minHeight: 48,
   },
   securityModalContent: {
-    backgroundColor: COLORS.cardBg,
     padding: 20,
     borderTopLeftRadius: 20,
     borderTopRightRadius: 20,
     maxHeight: '90%',
   },
-  modalHeader: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    marginBottom: 20,
-  },
-  modalTitle: {
-    fontSize: 20,
-    fontWeight: 'bold',
-    color: COLORS.text,
-  },
-  modalDescription: {
-    fontSize: 16,
-    color: COLORS.text,
-    marginBottom: 20,
-    lineHeight: 22,
-  },
-  modalError: {
-    color: COLORS.error,
-    marginBottom: 16,
-    padding: 8,
-    borderRadius: 4,
-    backgroundColor: 'rgba(255, 107, 107, 0.1)',
-  },
-  questionsContainer: {
-    maxHeight: Platform.OS === 'ios' ? '60%' : '55%',
-  },
-  questionSection: {
-    marginBottom: 16,
-    paddingVertical: 8,
-  },
-  questionSeparator: {
-    height: 1,
-    backgroundColor: COLORS.border,
-    marginVertical: 8,
-  },
-  questionNumber: {
-    fontSize: 18,
-    fontWeight: 'bold',
-    color: COLORS.text,
-    marginBottom: 12,
-  },
-  pickerContainer: {
-    borderWidth: 1,
-    borderColor: COLORS.border,
-    borderRadius: 8,
-    backgroundColor: COLORS.inputBg,
-    marginBottom: 16,
-    overflow: 'hidden',
-  },
-  picker: {
-    width: '100%',
-    height: Platform.OS === 'ios' ? 150 : 50,
-  },
-  answerLabel: {
-    fontSize: 16,
-    fontWeight: 'bold',
-    color: COLORS.text,
-    marginBottom: 8,
-  },
-  answerInput: {
-    backgroundColor: COLORS.inputBg,
-    padding: 12,
-    borderRadius: 8,
-    fontSize: 16,
-    borderWidth: 1,
-    borderColor: COLORS.border,
-    minHeight: 48,
-  },
+  
   // Custom dropdown styles
   customDropdownContainer: {
-    position: 'relative',
+    borderWidth: 1,
+    borderRadius: 8,
     marginBottom: 16,
-    zIndex: 1,
+    overflow: 'hidden',
   },
   customDropdownHeader: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
-    backgroundColor: COLORS.inputBg,
-    borderWidth: 1,
-    borderColor: COLORS.border,
-    borderRadius: 8,
-    padding: 14,
+    padding: 12,
+    borderBottomWidth: 1,
   },
   customDropdownHeaderText: {
     fontSize: 16,
-    color: COLORS.text,
     flex: 1,
   },
   customDropdownPlaceholder: {
-    color: COLORS.textSecondary,
+    opacity: 0.6,
   },
   customDropdownOptions: {
-    position: 'absolute',
-    top: '100%',
-    left: 0,
-    right: 0,
-    backgroundColor: COLORS.inputBg,
-    borderWidth: 1,
-    borderTopWidth: 0,
-    borderColor: COLORS.border,
-    borderBottomLeftRadius: 8,
-    borderBottomRightRadius: 8,
-    elevation: 5,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.1,
-    shadowRadius: 4,
-    maxHeight: 300,
-    zIndex: 100,
+    borderTopWidth: 1,
+    maxHeight: 200,
   },
   customDropdownOption: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
-    padding: 14,
-    borderBottomWidth: 1,
-    borderBottomColor: COLORS.border,
+    padding: 12,
+    borderBottomWidth: 0.5,
   },
   customDropdownOptionSelected: {
-    backgroundColor: 'rgba(247, 178, 51, 0.2)',
   },
   customDropdownOptionText: {
     fontSize: 16,
-    color: COLORS.text,
+    flex: 1,
   },
   customDropdownOptionTextSelected: {
-    color: COLORS.primary,
     fontWeight: 'bold',
   },
 }); 

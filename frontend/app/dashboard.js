@@ -15,6 +15,7 @@ import { LineChart } from 'react-native-chart-kit';
 import { router } from 'expo-router';
 import Logo from '../services/logoComponent';
 import { withAuth, useAuth } from '../services/authContext';
+import { useTheme } from '../services/themeContext';
 
 // PEAKMODE color theme based on logo
 const COLORS = {
@@ -79,6 +80,7 @@ const chartData = {
 
 function DashboardScreen() {
   const { user } = useAuth();
+  const { colors } = useTheme();
   const [loading, setLoading] = useState(true);
   const [todaySupplements, setTodaySupplements] = useState([]);
   const [recommendations, setRecommendations] = useState([]);
@@ -131,65 +133,77 @@ function DashboardScreen() {
 
   if (loading) {
     return (
-      <SafeAreaView style={styles.safeArea}>
-        <View style={styles.loadingContainer}>
-          <ActivityIndicator size="large" color={COLORS.primary} />
-          <Text style={styles.loadingText}>Loading dashboard...</Text>
+      <SafeAreaView style={[styles.safeArea, { backgroundColor: colors.background }]}>
+        <View style={[styles.loadingContainer, { backgroundColor: colors.background }]}>
+          <ActivityIndicator size="large" color={colors.primary} />
+          <Text style={[styles.loadingText, { color: colors.textSecondary }]}>Loading dashboard...</Text>
         </View>
       </SafeAreaView>
     );
   }
 
   return (
-    <SafeAreaView style={styles.safeArea}>
-      <ScrollView style={styles.container} contentContainerStyle={styles.contentContainer}>
+    <SafeAreaView style={[styles.safeArea, { backgroundColor: colors.background }]}>
+      <ScrollView 
+        style={[styles.container, { backgroundColor: colors.background }]} 
+        contentContainerStyle={styles.contentContainer}
+      >
         {/* Header Section */}
         <View style={styles.header}>
           <Logo width={150} />
         </View>
         
         {/* User Summary Section */}
-        <View style={styles.userSummaryCard}>
+        <View style={[styles.userSummaryCard, { 
+          backgroundColor: colors.cardBg,
+          shadowColor: colors.text 
+        }]}>
           <View style={styles.greetingRow}>
             <View>
-              <Text style={styles.greeting}>{getGreeting()}</Text>
-              <Text style={styles.username}>{user?.name || 'User'}</Text>
+              <Text style={[styles.greeting, { color: colors.textSecondary }]}>{getGreeting()}</Text>
+              <Text style={[styles.username, { color: colors.text }]}>{user?.name || 'User'}</Text>
             </View>
-            <View style={styles.adherenceCircle}>
-              <Text style={styles.adherenceText}>{adherencePercentage}%</Text>
-              <Text style={styles.adherenceLabel}>Today</Text>
+            <View style={[styles.adherenceCircle, { backgroundColor: colors.primary }]}>
+              <Text style={[styles.adherenceText, { color: colors.secondary }]}>{adherencePercentage}%</Text>
+              <Text style={[styles.adherenceLabel, { color: colors.secondary }]}>Today</Text>
             </View>
           </View>
           
-          <View style={styles.statsContainer}>
+          <View style={[styles.statsContainer, { backgroundColor: colors.inputBg }]}>
             <View style={styles.statItem}>
-              <Text style={styles.statValue}>{takenCount}/{totalCount}</Text>
-              <Text style={styles.statLabel}>Supplements Taken</Text>
+              <Text style={[styles.statValue, { color: colors.text }]}>{takenCount}/{totalCount}</Text>
+              <Text style={[styles.statLabel, { color: colors.textSecondary }]}>Supplements Taken</Text>
             </View>
-            <View style={styles.divider} />
+            <View style={[styles.divider, { backgroundColor: colors.border }]} />
             <View style={styles.statItem}>
-              <Text style={styles.statValue}>7</Text>
-              <Text style={styles.statLabel}>Day Streak</Text>
+              <Text style={[styles.statValue, { color: colors.text }]}>7</Text>
+              <Text style={[styles.statLabel, { color: colors.textSecondary }]}>Day Streak</Text>
             </View>
           </View>
           
           <View style={styles.quickActionsRow}>
-            <TouchableOpacity style={styles.actionButton} onPress={() => router.push('/track')}>
-              <Ionicons name="add-circle-outline" size={22} color={COLORS.primary} />
-              <Text style={styles.actionButtonText}>Log Supplements</Text>
+            <TouchableOpacity 
+              style={[styles.actionButton, { backgroundColor: colors.inputBg }]} 
+              onPress={() => router.push('/track')}
+            >
+              <Ionicons name="add-circle-outline" size={22} color={colors.primary} />
+              <Text style={[styles.actionButtonText, { color: colors.text }]}>Log Supplements</Text>
             </TouchableOpacity>
-            <TouchableOpacity style={styles.actionButton} onPress={() => router.push('/recommend')}>
-              <Ionicons name="search-outline" size={22} color={COLORS.primary} />
-              <Text style={styles.actionButtonText}>Find Supplements</Text>
+            <TouchableOpacity 
+              style={[styles.actionButton, { backgroundColor: colors.inputBg }]} 
+              onPress={() => router.push('/recommend')}
+            >
+              <Ionicons name="search-outline" size={22} color={colors.primary} />
+              <Text style={[styles.actionButtonText, { color: colors.text }]}>Find Supplements</Text>
             </TouchableOpacity>
           </View>
         </View>
         
         {/* Today's Supplements Section */}
         <View style={styles.sectionHeader}>
-          <Text style={styles.sectionTitle}>Today's Supplements</Text>
+          <Text style={[styles.sectionTitle, { color: colors.text }]}>Today's Supplements</Text>
           <TouchableOpacity onPress={() => router.push('/track')}>
-            <Text style={styles.seeAllText}>See All</Text>
+            <Text style={[styles.seeAllText, { color: colors.primary }]}>See All</Text>
           </TouchableOpacity>
         </View>
         
@@ -197,48 +211,58 @@ function DashboardScreen() {
           {todaySupplements.map((supplement) => (
             <TouchableOpacity 
               key={supplement.id} 
-              style={[styles.supplementCard, supplement.taken && styles.supplementCardTaken]}
+              style={[
+                styles.supplementCard, 
+                { 
+                  backgroundColor: colors.cardBg,
+                  borderColor: supplement.taken ? colors.success : colors.border,
+                  shadowColor: colors.text
+                }
+              ]}
               onPress={() => router.push('/track')}
             >
               <View style={styles.supplementIconContainer}>
                 {supplement.taken ? (
-                  <Ionicons name="checkmark-circle" size={24} color={COLORS.success} />
+                  <Ionicons name="checkmark-circle" size={24} color={colors.success} />
                 ) : (
-                  <Ionicons name="time-outline" size={24} color={COLORS.textSecondary} />
+                  <Ionicons name="time-outline" size={24} color={colors.textSecondary} />
                 )}
               </View>
-              <Text style={styles.supplementName}>{supplement.name}</Text>
-              <Text style={styles.supplementDosage}>{supplement.dosage}</Text>
-              <Text style={styles.supplementTime}>{supplement.time}</Text>
+              <Text style={[styles.supplementName, { color: colors.text }]}>{supplement.name}</Text>
+              <Text style={[styles.supplementDosage, { color: colors.textSecondary }]}>{supplement.dosage}</Text>
+              <Text style={[styles.supplementTime, { color: colors.textSecondary }]}>{supplement.time}</Text>
             </TouchableOpacity>
           ))}
         </ScrollView>
         
         {/* Progress Visualization Section */}
         <View style={styles.sectionHeader}>
-          <Text style={styles.sectionTitle}>Your Progress</Text>
+          <Text style={[styles.sectionTitle, { color: colors.text }]}>Your Progress</Text>
         </View>
         
-        <View style={styles.chartCard}>
-          <Text style={styles.chartTitle}>Weekly Adherence</Text>
+        <View style={[styles.chartCard, { 
+          backgroundColor: colors.cardBg,
+          shadowColor: colors.text 
+        }]}>
+          <Text style={[styles.chartTitle, { color: colors.text }]}>Weekly Adherence</Text>
           <LineChart
             data={chartData}
             width={screenWidth - 20}
             height={180}
             chartConfig={{
-              backgroundColor: COLORS.cardBg,
-              backgroundGradientFrom: COLORS.cardBg,
-              backgroundGradientTo: COLORS.cardBg,
+              backgroundColor: colors.cardBg,
+              backgroundGradientFrom: colors.cardBg,
+              backgroundGradientTo: colors.cardBg,
               decimalPlaces: 0,
               color: (opacity = 1) => `rgba(247, 178, 51, ${opacity})`,
-              labelColor: (opacity = 1) => `rgba(51, 51, 51, ${opacity})`,
+              labelColor: (opacity = 1) => colors.text,
               style: {
                 borderRadius: 16
               },
               propsForDots: {
                 r: "5",
                 strokeWidth: "2",
-                stroke: COLORS.primary
+                stroke: colors.primary
               }
             }}
             bezier
@@ -248,16 +272,19 @@ function DashboardScreen() {
         
         {/* Recommendations Section */}
         <View style={styles.sectionHeader}>
-          <Text style={styles.sectionTitle}>Recommended For You</Text>
+          <Text style={[styles.sectionTitle, { color: colors.text }]}>Recommended For You</Text>
           <TouchableOpacity onPress={() => router.push('/recommend')}>
-            <Text style={styles.seeAllText}>See All</Text>
+            <Text style={[styles.seeAllText, { color: colors.primary }]}>See All</Text>
           </TouchableOpacity>
         </View>
         
         {recommendations.map((recommendation) => (
           <TouchableOpacity 
             key={recommendation.id} 
-            style={styles.recommendationCard}
+            style={[styles.recommendationCard, { 
+              backgroundColor: colors.cardBg,
+              shadowColor: colors.text 
+            }]}
             onPress={() => router.push('/recommend')}
           >
             <Image
@@ -265,19 +292,19 @@ function DashboardScreen() {
               style={styles.recommendationImage}
             />
             <View style={styles.recommendationContent}>
-              <Text style={styles.recommendationName}>{recommendation.name}</Text>
-              <Text style={styles.recommendationDescription}>
+              <Text style={[styles.recommendationName, { color: colors.text }]}>{recommendation.name}</Text>
+              <Text style={[styles.recommendationDescription, { color: colors.textSecondary }]}>
                 {recommendation.description}
               </Text>
               <View style={styles.confidenceContainer}>
-                <Text style={styles.confidenceText}>
+                <Text style={[styles.confidenceText, { color: colors.primary }]}>
                   {recommendation.confidence}% match
                 </Text>
-                <View style={styles.confidenceBar}>
+                <View style={[styles.confidenceBar, { backgroundColor: colors.inputBg }]}>
                   <View
                     style={[
                       styles.confidenceFill, 
-                      { width: `${recommendation.confidence}%` }
+                      { width: `${recommendation.confidence}%`, backgroundColor: colors.primary }
                     ]}
                   />
                 </View>
@@ -288,21 +315,27 @@ function DashboardScreen() {
         
         {/* Activity Feed Section */}
         <View style={styles.sectionHeader}>
-          <Text style={styles.sectionTitle}>Recent Activity</Text>
+          <Text style={[styles.sectionTitle, { color: colors.text }]}>Recent Activity</Text>
           <TouchableOpacity onPress={() => router.push('/learn')}>
-            <Text style={styles.seeAllText}>Learn More</Text>
+            <Text style={[styles.seeAllText, { color: colors.primary }]}>Learn More</Text>
           </TouchableOpacity>
         </View>
         
-        <View style={styles.activityCard}>
-          {activity.map((item) => (
-            <View key={item.id} style={styles.activityItem}>
-              <View style={styles.activityIconContainer}>
-                <Ionicons name={getActivityIcon(item.type)} size={20} color={COLORS.primary} />
+        <View style={[styles.activityCard, { 
+          backgroundColor: colors.cardBg,
+          shadowColor: colors.text 
+        }]}>
+          {activity.map((item, index) => (
+            <View key={item.id} style={[
+              styles.activityItem,
+              index < activity.length - 1 && { borderBottomColor: colors.border, borderBottomWidth: 1 }
+            ]}>
+              <View style={[styles.activityIconContainer, { backgroundColor: colors.inputBg }]}>
+                <Ionicons name={getActivityIcon(item.type)} size={20} color={colors.primary} />
               </View>
               <View style={styles.activityContent}>
-                <Text style={styles.activityName}>{item.name}</Text>
-                <Text style={styles.activityTime}>{item.time}</Text>
+                <Text style={[styles.activityName, { color: colors.text }]}>{item.name}</Text>
+                <Text style={[styles.activityTime, { color: colors.textSecondary }]}>{item.time}</Text>
               </View>
             </View>
           ))}
@@ -315,11 +348,9 @@ function DashboardScreen() {
 const styles = StyleSheet.create({
   safeArea: {
     flex: 1,
-    backgroundColor: COLORS.background,
   },
   container: {
     flex: 1,
-    backgroundColor: COLORS.background,
   },
   contentContainer: {
     padding: 20,
@@ -333,18 +364,15 @@ const styles = StyleSheet.create({
   loadingText: {
     marginTop: 10,
     fontSize: 16,
-    color: COLORS.text,
   },
   header: {
     alignItems: 'center',
     marginBottom: 20,
   },
   userSummaryCard: {
-    backgroundColor: COLORS.cardBg,
     borderRadius: 16,
     padding: 20,
     marginBottom: 24,
-    shadowColor: '#000',
     shadowOffset: { width: 0, height: 2 },
     shadowOpacity: 0.1,
     shadowRadius: 4,
@@ -358,34 +386,28 @@ const styles = StyleSheet.create({
   },
   greeting: {
     fontSize: 16,
-    color: COLORS.textSecondary,
   },
   username: {
     fontSize: 20,
     fontWeight: 'bold',
-    color: COLORS.text,
   },
   adherenceCircle: {
     width: 60,
     height: 60,
     borderRadius: 30,
-    backgroundColor: COLORS.primary,
     justifyContent: 'center',
     alignItems: 'center',
   },
   adherenceText: {
     fontSize: 16,
     fontWeight: 'bold',
-    color: COLORS.secondary,
   },
   adherenceLabel: {
     fontSize: 12,
-    color: COLORS.secondary,
   },
   statsContainer: {
     flexDirection: 'row',
     borderRadius: 12,
-    backgroundColor: COLORS.inputBg,
     padding: 16,
     marginBottom: 16,
   },
@@ -396,16 +418,13 @@ const styles = StyleSheet.create({
   statValue: {
     fontSize: 18,
     fontWeight: 'bold',
-    color: COLORS.text,
     marginBottom: 4,
   },
   statLabel: {
     fontSize: 12,
-    color: COLORS.textSecondary,
   },
   divider: {
     width: 1,
-    backgroundColor: COLORS.border,
     marginHorizontal: 10,
   },
   quickActionsRow: {
@@ -416,7 +435,6 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
-    backgroundColor: COLORS.inputBg,
     borderRadius: 10,
     paddingVertical: 12,
     paddingHorizontal: 16,
@@ -424,7 +442,6 @@ const styles = StyleSheet.create({
     marginHorizontal: 4,
   },
   actionButtonText: {
-    color: COLORS.text,
     fontSize: 14,
     fontWeight: '500',
     marginLeft: 6,
@@ -439,10 +456,8 @@ const styles = StyleSheet.create({
   sectionTitle: {
     fontSize: 18,
     fontWeight: '600',
-    color: COLORS.text,
   },
   seeAllText: {
-    color: COLORS.primary,
     fontSize: 14,
     fontWeight: '500',
   },
@@ -450,21 +465,14 @@ const styles = StyleSheet.create({
     marginBottom: 24,
   },
   supplementCard: {
-    backgroundColor: COLORS.cardBg,
     borderRadius: 12,
     padding: 16,
-    shadowColor: '#000',
     shadowOffset: { width: 0, height: 1 },
     shadowOpacity: 0.1,
     shadowRadius: 2,
     elevation: 2,
     marginRight: 12,
     width: 130,
-    borderWidth: 1,
-    borderColor: COLORS.border,
-  },
-  supplementCardTaken: {
-    borderColor: COLORS.success,
     borderWidth: 1,
   },
   supplementIconContainer: {
@@ -473,24 +481,19 @@ const styles = StyleSheet.create({
   supplementName: {
     fontSize: 16,
     fontWeight: '600',
-    color: COLORS.text,
     marginBottom: 4,
   },
   supplementDosage: {
     fontSize: 14,
-    color: COLORS.textSecondary,
     marginBottom: 8,
   },
   supplementTime: {
     fontSize: 12,
-    color: COLORS.textSecondary,
   },
   chartCard: {
-    backgroundColor: COLORS.cardBg,
     borderRadius: 16,
     padding: 16,
     marginBottom: 24,
-    shadowColor: '#000',
     shadowOffset: { width: 0, height: 2 },
     shadowOpacity: 0.1,
     shadowRadius: 4,
@@ -500,72 +503,63 @@ const styles = StyleSheet.create({
   chartTitle: {
     fontSize: 16,
     fontWeight: '600',
-    color: COLORS.text,
-    marginBottom: 16,
+    marginBottom: 10,
     alignSelf: 'flex-start',
   },
   chart: {
-    borderRadius: 16,
-    paddingRight: 16,
+    borderRadius: 8,
+    paddingRight: 0,
   },
   recommendationCard: {
-    backgroundColor: COLORS.cardBg,
+    flexDirection: 'row',
     borderRadius: 16,
+    padding: 12,
     marginBottom: 16,
-    shadowColor: '#000',
     shadowOffset: { width: 0, height: 2 },
     shadowOpacity: 0.1,
     shadowRadius: 4,
     elevation: 2,
-    flexDirection: 'row',
-    overflow: 'hidden',
   },
   recommendationImage: {
-    width: 100,
-    height: 'auto',
-    aspectRatio: 1,
+    width: 70,
+    height: 70,
+    borderRadius: 8,
+    marginRight: 12,
   },
   recommendationContent: {
-    padding: 16,
     flex: 1,
+    justifyContent: 'center',
   },
   recommendationName: {
     fontSize: 16,
     fontWeight: '600',
-    color: COLORS.text,
-    marginBottom: 6,
+    marginBottom: 4,
   },
   recommendationDescription: {
-    fontSize: 14,
-    color: COLORS.textSecondary,
-    marginBottom: 10,
-    lineHeight: 20,
+    fontSize: 13,
+    marginBottom: 8,
   },
   confidenceContainer: {
-    marginTop: 'auto',
+    marginTop: 4,
   },
   confidenceText: {
     fontSize: 12,
     fontWeight: '500',
-    color: COLORS.success,
     marginBottom: 4,
   },
   confidenceBar: {
     height: 4,
-    backgroundColor: '#E0E0E0',
     borderRadius: 2,
+    width: '100%',
     overflow: 'hidden',
   },
   confidenceFill: {
     height: '100%',
-    backgroundColor: COLORS.success,
   },
   activityCard: {
-    backgroundColor: COLORS.cardBg,
     borderRadius: 16,
     padding: 16,
-    marginBottom: 24,
-    shadowColor: '#000',
+    marginBottom: 20,
     shadowOffset: { width: 0, height: 2 },
     shadowOpacity: 0.1,
     shadowRadius: 4,
@@ -575,14 +569,11 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     paddingVertical: 12,
-    borderBottomWidth: 1,
-    borderBottomColor: COLORS.border,
   },
   activityIconContainer: {
     width: 36,
     height: 36,
     borderRadius: 18,
-    backgroundColor: '#FFF5E0',
     justifyContent: 'center',
     alignItems: 'center',
     marginRight: 12,
@@ -592,13 +583,11 @@ const styles = StyleSheet.create({
   },
   activityName: {
     fontSize: 14,
-    color: COLORS.text,
     fontWeight: '500',
-    marginBottom: 4,
+    marginBottom: 2,
   },
   activityTime: {
     fontSize: 12,
-    color: COLORS.textSecondary,
   },
 });
 

@@ -5,6 +5,7 @@ import { SplashScreen } from 'expo-router';
 import { StyleSheet, View, Dimensions, TouchableOpacity, Text, Platform, LogBox } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { AuthProvider, useAuth } from '../services/authContext';
+import { ThemeProvider, useTheme } from '../services/themeContext';
 import connectivityService from '../services/connectivity';
 import errorSuppressor from '../services/errorSuppressor';
 
@@ -59,8 +60,10 @@ SplashScreen.preventAutoHideAsync();
 
 // Implement a persistent layout wrapper
 const PersistentLayout = memo(({ children }) => {
+  const { colors } = useTheme();
+  
   return (
-    <View style={styles.persistentContainer}>
+    <View style={[styles.persistentContainer, { backgroundColor: colors.background }]}>
       {children}
     </View>
   );
@@ -150,6 +153,7 @@ const getShortenedLabel = (routeName) => {
 const CustomTabBar = ({ state, descriptors, navigation }) => {
   const screenWidth = Dimensions.get('window').width;
   const isSmallScreen = screenWidth < 375;
+  const { colors } = useTheme();
   
   // Only show the allowed tabs
   const allowedRoutes = state.routes.filter(route => 
@@ -160,9 +164,9 @@ const CustomTabBar = ({ state, descriptors, navigation }) => {
     <View style={{
       flexDirection: 'row',
       height: 85,
-      backgroundColor: COLORS.secondary,
+      backgroundColor: colors.cardBg,
       borderTopWidth: 1,
-      borderTopColor: '#E8E8E8',
+      borderTopColor: colors.border,
       paddingBottom: Platform.OS === 'ios' ? 25 : 15,
       elevation: 8,
       shadowColor: '#000',
@@ -218,12 +222,12 @@ const CustomTabBar = ({ state, descriptors, navigation }) => {
             <Ionicons 
               name={iconName} 
               size={24} 
-              color={isFocused ? COLORS.primary : COLORS.textSecondary}
+              color={isFocused ? colors.primary : colors.textSecondary}
               style={{ marginBottom: 5 }}
             />
             <Text 
               style={{
-                color: isFocused ? COLORS.primary : COLORS.textSecondary,
+                color: isFocused ? colors.primary : colors.textSecondary,
                 fontSize: isSmallScreen ? 10 : 12,
                 fontWeight: isFocused ? '600' : '400',
                 textAlign: 'center',
@@ -323,9 +327,11 @@ export default function RootLayout() {
 
   return (
     <AuthProvider>
-      <PersistentLayout>
-        <NavigationLayout />
-      </PersistentLayout>
+      <ThemeProvider>
+        <PersistentLayout>
+          <NavigationLayout />
+        </PersistentLayout>
+      </ThemeProvider>
     </AuthProvider>
   );
 }
@@ -333,6 +339,6 @@ export default function RootLayout() {
 const styles = StyleSheet.create({
   persistentContainer: {
     flex: 1,
-    backgroundColor: '#F5F5F5', // Match your app's background color
+    backgroundColor: '#F5F5F5', // Default, but will be overridden by theme
   },
 }); 

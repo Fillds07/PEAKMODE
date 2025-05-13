@@ -21,22 +21,14 @@ import { Ionicons } from '@expo/vector-icons';
 import Logo from '../services/logoComponent';
 import StandardError from '../services/ErrorDisplay';
 import AsyncStorage from '@react-native-async-storage/async-storage';
-
-// PEAKMODE color theme based on logo
-const COLORS = {
-  primary: '#F7B233', // Yellow/orange from logo
-  secondary: '#FFFFFF', // White for background
-  text: '#333333', // Dark text
-  textSecondary: '#777777', // Secondary text
-  background: '#F5F5F5', // Light gray background
-  cardBg: '#FFFFFF', // White background for cards
-  inputBg: '#F9F9F9', // Light gray for input backgrounds
-  border: '#DDDDDD', // Light gray for borders
-  error: '#FF6B6B', // Red for errors
-  success: '#4CAF50', // Green for success
-}
+import { useTheme } from '../services/themeContext';
+import ThemeToggle from '../components/ThemeToggle';
+import { getThemedStyles } from '../services/themeHelper';
 
 export default function ForgotPasswordScreen() {
+  const { colors, isDarkMode } = useTheme();
+  const themedStyles = getThemedStyles(colors);
+  
   // Multi-step state
   const [currentStep, setCurrentStep] = useState(1); // 1: Username, 2: Security Questions, 3: Reset Password
   
@@ -356,9 +348,9 @@ export default function ForgotPasswordScreen() {
   // Show loading indicator during initial connectivity check
   if (isConnecting) {
     return (
-      <View style={styles.loadingContainer}>
-        <ActivityIndicator size="large" color={COLORS.primary} />
-        <Text style={styles.loadingText}>Checking connection...</Text>
+      <View style={[styles.loadingContainer, { backgroundColor: colors.background }]}>
+        <ActivityIndicator size="large" color={colors.primary} />
+        <Text style={[styles.loadingText, { color: colors.text }]}>Checking connection...</Text>
       </View>
     );
   }
@@ -368,7 +360,7 @@ export default function ForgotPasswordScreen() {
       behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
       style={styles.keyboardAvoidView}
     >
-      <DismissKeyboardView style={styles.container}>
+      <DismissKeyboardView style={[styles.container, { backgroundColor: colors.background }]}>
         <ScrollView
           contentContainerStyle={styles.scrollContainer}
           keyboardShouldPersistTaps="handled"
@@ -377,6 +369,8 @@ export default function ForgotPasswordScreen() {
             style={[
               styles.card,
               {
+                backgroundColor: colors.cardBg,
+                shadowColor: colors.text,
                 opacity: fadeAnim,
                 transform: [{ translateY: slideAnim }]
               }
@@ -389,8 +383,8 @@ export default function ForgotPasswordScreen() {
             {/* Step 1: Enter Username */}
             {currentStep === 1 && (
               <>
-                <Text style={styles.headerText}>Forgot Password</Text>
-                <Text style={styles.subHeaderText}>
+                <Text style={[styles.headerText, { color: colors.text }]}>Forgot Password</Text>
+                <Text style={[styles.subHeaderText, { color: colors.textSecondary }]}>
                   Enter your username to begin the password reset process.
                 </Text>
                 
@@ -401,30 +395,30 @@ export default function ForgotPasswordScreen() {
                 />
                 
                 <View style={styles.inputContainer}>
-                  <Text style={styles.label}>Username</Text>
-                  <View style={styles.inputWrapper}>
-                    <Ionicons name="person-outline" size={20} color={COLORS.textSecondary} style={styles.inputIcon} />
+                  <Text style={[styles.label, { color: colors.text }]}>Username</Text>
+                  <View style={[styles.inputWrapper, { backgroundColor: colors.inputBg, borderColor: colors.border }]}>
+                    <Ionicons name="person-outline" size={20} color={colors.textSecondary} style={styles.inputIcon} />
                     <TextInput
-                      style={styles.input}
+                      style={[styles.input, { color: colors.text }]}
                       placeholder="Enter your username"
                       value={username}
                       onChangeText={setUsername}
                       autoCapitalize="none"
                       autoCorrect={false}
-                      placeholderTextColor={COLORS.textSecondary}
+                      placeholderTextColor={colors.textSecondary}
                     />
                   </View>
                 </View>
                 
                 <TouchableOpacity
-                  style={styles.primaryButton}
+                  style={[styles.primaryButton, { backgroundColor: colors.primary }]}
                   onPress={handleUsernameSubmit}
                   disabled={loading}
                 >
                   {loading ? (
-                    <ActivityIndicator color="#FFFFFF" />
+                    <ActivityIndicator color={colors.secondary} />
                   ) : (
-                    <Text style={styles.primaryButtonText}>Continue</Text>
+                    <Text style={[styles.primaryButtonText, { color: colors.secondary }]}>Continue</Text>
                   )}
                 </TouchableOpacity>
                 
@@ -432,15 +426,15 @@ export default function ForgotPasswordScreen() {
                   <TouchableOpacity
                     onPress={() => router.push('/forgot-username')}
                   >
-                    <Text style={styles.linkText}>Forgot Username?</Text>
+                    <Text style={[styles.linkText, { color: colors.primary }]}>Forgot Username?</Text>
                   </TouchableOpacity>
                 </View>
                 
                 <TouchableOpacity
-                  style={styles.secondaryButton}
+                  style={[styles.secondaryButton, { borderColor: colors.primary }]}
                   onPress={handleGoBack}
                 >
-                  <Text style={styles.secondaryButtonText}>Back to Login</Text>
+                  <Text style={[styles.secondaryButtonText, { color: colors.primary }]}>Back to Login</Text>
                 </TouchableOpacity>
               </>
             )}
@@ -448,8 +442,8 @@ export default function ForgotPasswordScreen() {
             {/* Step 2: Answer Security Questions */}
             {currentStep === 2 && (
               <>
-                <Text style={styles.headerText}>Security Questions</Text>
-                <Text style={styles.subHeaderText}>
+                <Text style={[styles.headerText, { color: colors.text }]}>Security Questions</Text>
+                <Text style={[styles.subHeaderText, { color: colors.textSecondary }]}>
                   Please answer your security questions to verify your identity.
                 </Text>
                 
@@ -461,40 +455,40 @@ export default function ForgotPasswordScreen() {
                 
                 {securityQuestions.map((question, index) => (
                   <View key={question.id} style={styles.inputContainer}>
-                    <Text style={styles.label}>Question {index + 1}</Text>
-                    <Text style={styles.questionText}>{question.question}</Text>
-                    <View style={styles.inputWrapper}>
-                      <Ionicons name="shield-checkmark-outline" size={20} color={COLORS.textSecondary} style={styles.inputIcon} />
+                    <Text style={[styles.label, { color: colors.text }]}>Question {index + 1}</Text>
+                    <Text style={[styles.questionText, { color: colors.text }]}>{question.question}</Text>
+                    <View style={[styles.inputWrapper, { backgroundColor: colors.inputBg, borderColor: colors.border }]}>
+                      <Ionicons name="shield-checkmark-outline" size={20} color={colors.textSecondary} style={styles.inputIcon} />
                       <TextInput
-                        style={styles.input}
+                        style={[styles.input, { color: colors.text }]}
                         placeholder="Your answer"
                         value={securityAnswers[question.id] || ''}
                         onChangeText={(text) => handleAnswerChange(question.id, text)}
                         autoCapitalize="none"
                         autoCorrect={false}
-                        placeholderTextColor={COLORS.textSecondary}
+                        placeholderTextColor={colors.textSecondary}
                       />
                     </View>
                   </View>
                 ))}
                 
                 <TouchableOpacity
-                  style={styles.primaryButton}
+                  style={[styles.primaryButton, { backgroundColor: colors.primary }]}
                   onPress={handleSecurityAnswersSubmit}
                   disabled={loading}
                 >
                   {loading ? (
-                    <ActivityIndicator color="#FFFFFF" />
+                    <ActivityIndicator color={colors.secondary} />
                   ) : (
-                    <Text style={styles.primaryButtonText}>Verify Answers</Text>
+                    <Text style={[styles.primaryButtonText, { color: colors.secondary }]}>Verify Answers</Text>
                   )}
                 </TouchableOpacity>
                 
                 <TouchableOpacity
-                  style={styles.secondaryButton}
+                  style={[styles.secondaryButton, { borderColor: colors.primary }]}
                   onPress={handleGoBack}
                 >
-                  <Text style={styles.secondaryButtonText}>Back</Text>
+                  <Text style={[styles.secondaryButtonText, { color: colors.primary }]}>Back</Text>
                 </TouchableOpacity>
               </>
             )}
@@ -502,13 +496,13 @@ export default function ForgotPasswordScreen() {
             {/* Step 3: Reset Password */}
             {currentStep === 3 && (
               <>
-                <Text style={styles.headerText}>Reset Password</Text>
-                <Text style={styles.subHeaderText}>
+                <Text style={[styles.headerText, { color: colors.text }]}>Reset Password</Text>
+                <Text style={[styles.subHeaderText, { color: colors.textSecondary }]}>
                   Create a new password for your account.
                 </Text>
                 
                 {/* Display current username for debugging */}
-                <Text style={[styles.subHeaderText, {fontSize: 12, color: '#999'}]}>
+                <Text style={[styles.subHeaderText, {fontSize: 12, color: colors.textSecondary}]}>
                   Username: {username}
                 </Text>
                 
@@ -520,24 +514,24 @@ export default function ForgotPasswordScreen() {
                 
                 {/* Show verification success message without redirect text */}
                 {successMessage && (
-                  <View style={styles.successContainer}>
-                    <Text style={styles.successText}>{successMessage}</Text>
+                  <View style={[styles.successContainer, { backgroundColor: `${colors.success}20`, borderColor: colors.success }]}>
+                    <Text style={[styles.successText, { color: colors.success }]}>{successMessage}</Text>
                   </View>
                 )}
                 
                 <View style={styles.inputContainer}>
-                  <Text style={styles.label}>New Password</Text>
-                  <View style={styles.passwordContainer}>
-                    <Ionicons name="lock-closed-outline" size={20} color={COLORS.textSecondary} style={styles.inputIcon} />
+                  <Text style={[styles.label, { color: colors.text }]}>New Password</Text>
+                  <View style={[styles.passwordContainer, { backgroundColor: colors.inputBg, borderColor: colors.border }]}>
+                    <Ionicons name="lock-closed-outline" size={20} color={colors.textSecondary} style={styles.inputIcon} />
                     <TextInput
-                      style={[styles.input, styles.passwordInput]}
+                      style={[styles.input, styles.passwordInput, { color: colors.text }]}
                       placeholder="Enter new password"
                       value={newPassword}
                       onChangeText={setNewPassword}
                       secureTextEntry={!showPassword}
                       autoCapitalize="none"
                       autoCorrect={false}
-                      placeholderTextColor={COLORS.textSecondary}
+                      placeholderTextColor={colors.textSecondary}
                     />
                     <TouchableOpacity 
                       style={styles.passwordToggle}
@@ -546,47 +540,47 @@ export default function ForgotPasswordScreen() {
                       <Ionicons 
                         name={showPassword ? 'eye-off' : 'eye'} 
                         size={24} 
-                        color={COLORS.textSecondary} 
+                        color={colors.textSecondary} 
                       />
                     </TouchableOpacity>
                   </View>
                 </View>
                 
                 <View style={styles.inputContainer}>
-                  <Text style={styles.label}>Confirm Password</Text>
-                  <View style={styles.passwordContainer}>
-                    <Ionicons name="lock-closed-outline" size={20} color={COLORS.textSecondary} style={styles.inputIcon} />
+                  <Text style={[styles.label, { color: colors.text }]}>Confirm Password</Text>
+                  <View style={[styles.passwordContainer, { backgroundColor: colors.inputBg, borderColor: colors.border }]}>
+                    <Ionicons name="lock-closed-outline" size={20} color={colors.textSecondary} style={styles.inputIcon} />
                     <TextInput
-                      style={[styles.input, styles.passwordInput]}
+                      style={[styles.input, styles.passwordInput, { color: colors.text }]}
                       placeholder="Confirm new password"
                       value={confirmPassword}
                       onChangeText={setConfirmPassword}
                       secureTextEntry={!showPassword}
                       autoCapitalize="none"
                       autoCorrect={false}
-                      placeholderTextColor={COLORS.textSecondary}
+                      placeholderTextColor={colors.textSecondary}
                     />
                   </View>
                 </View>
                 
                 <TouchableOpacity
-                  style={styles.primaryButton}
+                  style={[styles.primaryButton, { backgroundColor: colors.primary }]}
                   onPress={handleResetPassword}
                   disabled={loading}
                 >
                   {loading ? (
-                    <ActivityIndicator color="#FFFFFF" />
+                    <ActivityIndicator color={colors.secondary} />
                   ) : (
-                    <Text style={styles.primaryButtonText}>Reset Password</Text>
+                    <Text style={[styles.primaryButtonText, { color: colors.secondary }]}>Reset Password</Text>
                   )}
                 </TouchableOpacity>
                 
                 <TouchableOpacity
-                  style={styles.secondaryButton}
+                  style={[styles.secondaryButton, { borderColor: colors.primary }]}
                   onPress={handleGoBack}
                   disabled={loading}
                 >
-                  <Text style={styles.secondaryButtonText}>Back</Text>
+                  <Text style={[styles.secondaryButtonText, { color: colors.primary }]}>Back</Text>
                 </TouchableOpacity>
               </>
             )}
@@ -603,7 +597,6 @@ const styles = StyleSheet.create({
   },
   container: {
     flex: 1,
-    backgroundColor: COLORS.background,
   },
   scrollContainer: {
     flexGrow: 1,
@@ -615,20 +608,16 @@ const styles = StyleSheet.create({
     flex: 1,
     justifyContent: 'center',
     alignItems: 'center',
-    backgroundColor: COLORS.background,
   },
   loadingText: {
     marginTop: 10,
     fontSize: 16,
-    color: COLORS.text,
   },
   card: {
-    backgroundColor: COLORS.cardBg,
     borderRadius: 12,
     width: '100%',
     maxWidth: 400,
     padding: 24,
-    shadowColor: '#000',
     shadowOffset: { width: 0, height: 2 },
     shadowOpacity: 0.1,
     shadowRadius: 5,
@@ -641,13 +630,11 @@ const styles = StyleSheet.create({
   headerText: {
     fontSize: 24,
     fontWeight: 'bold',
-    color: COLORS.text,
     marginBottom: 10,
     textAlign: 'center',
   },
   subHeaderText: {
     fontSize: 16,
-    color: COLORS.textSecondary,
     marginBottom: 24,
     textAlign: 'center',
     lineHeight: 22,
@@ -658,30 +645,24 @@ const styles = StyleSheet.create({
   label: {
     fontSize: 14,
     fontWeight: '500',
-    color: COLORS.text,
     marginBottom: 8,
   },
   questionText: {
     fontSize: 16,
-    color: COLORS.text,
     marginBottom: 10,
     fontWeight: '500',
   },
   inputWrapper: {
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: COLORS.inputBg,
     borderRadius: 8,
     borderWidth: 1,
-    borderColor: COLORS.border,
   },
   passwordContainer: {
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: COLORS.inputBg,
     borderRadius: 8,
     borderWidth: 1,
-    borderColor: COLORS.border,
   },
   inputIcon: {
     paddingLeft: 12,
@@ -692,7 +673,6 @@ const styles = StyleSheet.create({
     height: 50,
     paddingHorizontal: 8,
     fontSize: 16,
-    color: COLORS.text,
   },
   passwordInput: {
     paddingRight: 50,
@@ -707,7 +687,6 @@ const styles = StyleSheet.create({
     marginBottom: 16,
   },
   primaryButton: {
-    backgroundColor: COLORS.primary,
     height: 50,
     borderRadius: 8,
     justifyContent: 'center',
@@ -716,20 +695,17 @@ const styles = StyleSheet.create({
     marginBottom: 16,
   },
   primaryButtonText: {
-    color: COLORS.secondary,
     fontSize: 16,
     fontWeight: 'bold',
   },
   secondaryButton: {
     borderWidth: 1,
-    borderColor: COLORS.primary,
     height: 50,
     borderRadius: 8,
     justifyContent: 'center',
     alignItems: 'center',
   },
   secondaryButtonText: {
-    color: COLORS.primary,
     fontSize: 16,
     fontWeight: '500',
   },
@@ -738,20 +714,16 @@ const styles = StyleSheet.create({
     alignItems: 'center',
   },
   linkText: {
-    color: COLORS.primary,
     fontSize: 14,
     textDecorationLine: 'underline',
   },
   successContainer: {
-    backgroundColor: `${COLORS.success}20`,
     borderRadius: 8,
     padding: 12,
     marginBottom: 16,
     borderWidth: 1,
-    borderColor: COLORS.success,
   },
   successText: {
-    color: COLORS.success,
     fontSize: 14,
     textAlign: 'center',
   },
@@ -759,7 +731,6 @@ const styles = StyleSheet.create({
     marginBottom: 16,
   },
   tokenExpiryText: {
-    color: COLORS.textSecondary,
     fontSize: 14,
     textAlign: 'center',
     marginBottom: 8,

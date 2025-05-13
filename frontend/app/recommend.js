@@ -17,6 +17,8 @@ import { Ionicons } from '@expo/vector-icons';
 import { router } from 'expo-router';
 import Logo from '../services/logoComponent';
 import { withAuth, useAuth } from '../services/authContext';
+import { useTheme } from '../services/themeContext';
+import { getThemedStyles } from '../services/themeHelper';
 
 // PEAKMODE color theme based on logo
 const COLORS = {
@@ -178,6 +180,9 @@ const filterCategories = [
 
 function RecommendScreen() {
   const { user } = useAuth();
+  const { colors, isDarkMode } = useTheme();
+  const themedStyles = getThemedStyles(colors);
+  
   const [loading, setLoading] = useState(true);
   const [recommendations, setRecommendations] = useState([]);
   const [filteredRecommendations, setFilteredRecommendations] = useState([]);
@@ -252,14 +257,14 @@ function RecommendScreen() {
 
   // Render match indicator based on percentage
   const renderMatchIndicator = (percentage) => {
-    let color = COLORS.error;
-    if (percentage >= 90) color = COLORS.success;
-    else if (percentage >= 75) color = COLORS.primary;
+    let color = colors.error;
+    if (percentage >= 90) color = colors.success;
+    else if (percentage >= 75) color = colors.primary;
     
     return (
       <View style={styles.matchContainer}>
         <Text style={[styles.matchText, {color}]}>{percentage}% match</Text>
-        <View style={styles.matchBarContainer}>
+        <View style={[styles.matchBarContainer, { backgroundColor: colors.inputBg }]}>
           <View style={[styles.matchBar, {width: `${percentage}%`, backgroundColor: color}]} />
         </View>
       </View>
@@ -268,44 +273,47 @@ function RecommendScreen() {
 
   if (loading) {
     return (
-      <SafeAreaView style={styles.safeArea}>
-        <View style={styles.loadingContainer}>
-          <ActivityIndicator size="large" color={COLORS.primary} />
-          <Text style={styles.loadingText}>Loading recommendations...</Text>
+      <SafeAreaView style={[styles.safeArea, { backgroundColor: colors.background }]}>
+        <View style={[styles.loadingContainer, { backgroundColor: colors.background }]}>
+          <ActivityIndicator size="large" color={colors.primary} />
+          <Text style={[styles.loadingText, { color: colors.textSecondary }]}>Loading recommendations...</Text>
         </View>
       </SafeAreaView>
     );
   }
 
   return (
-    <SafeAreaView style={styles.safeArea}>
-      <ScrollView style={styles.container} contentContainerStyle={styles.contentContainer}>
+    <SafeAreaView style={[styles.safeArea, { backgroundColor: colors.background }]}>
+      <ScrollView 
+        style={[styles.container, { backgroundColor: colors.background }]} 
+        contentContainerStyle={styles.contentContainer}
+      >
         {/* Header Section */}
         <View style={styles.header}>
           <Logo width={150} />
-          <Text style={styles.title}>Recommended For You</Text>
+          <Text style={[styles.title, { color: colors.text }]}>Recommended For You</Text>
         </View>
         
         {/* Personalized Message */}
-        <View style={styles.welcomeContainer}>
-          <Text style={styles.welcomeText}>
+        <View style={[styles.welcomeContainer, { backgroundColor: colors.cardBg }]}>
+          <Text style={[styles.welcomeText, { color: colors.text }]}>
             Hi {user?.name || 'there'}! Here are your personalized supplement recommendations based on your health profile.
           </Text>
         </View>
         
         {/* Search Bar */}
-        <View style={styles.searchContainer}>
-          <Ionicons name="search-outline" size={20} color={COLORS.textSecondary} style={styles.searchIcon} />
+        <View style={[styles.searchContainer, { backgroundColor: colors.inputBg, borderColor: colors.border }]}>
+          <Ionicons name="search-outline" size={20} color={colors.textSecondary} style={styles.searchIcon} />
           <TextInput
-            style={styles.searchInput}
+            style={[styles.searchInput, { color: colors.text }]}
             placeholder="Search supplements..."
             value={searchQuery}
             onChangeText={setSearchQuery}
-            placeholderTextColor={COLORS.textSecondary}
+            placeholderTextColor={colors.textSecondary}
           />
           {searchQuery ? (
             <TouchableOpacity onPress={() => setSearchQuery('')}>
-              <Ionicons name="close-circle" size={20} color={COLORS.textSecondary} />
+              <Ionicons name="close-circle" size={20} color={colors.textSecondary} />
             </TouchableOpacity>
           ) : null}
         </View>
@@ -322,14 +330,23 @@ function RecommendScreen() {
               key={category.id}
               style={[
                 styles.categoryButton,
-                selectedCategory === category.id && styles.categoryButtonActive
+                { 
+                  backgroundColor: selectedCategory === category.id 
+                    ? colors.primary 
+                    : colors.inputBg,
+                  borderColor: colors.border
+                }
               ]}
               onPress={() => setSelectedCategory(category.id)}
             >
               <Text
                 style={[
                   styles.categoryButtonText,
-                  selectedCategory === category.id && styles.categoryButtonTextActive
+                  { 
+                    color: selectedCategory === category.id 
+                      ? colors.secondary 
+                      : colors.text 
+                  }
                 ]}
               >
                 {category.name}
@@ -339,7 +356,7 @@ function RecommendScreen() {
         </ScrollView>
         
         {/* Results Count */}
-        <Text style={styles.resultsText}>
+        <Text style={[styles.resultsText, { color: colors.textSecondary }]}>
           {filteredRecommendations.length} {filteredRecommendations.length === 1 ? 'supplement' : 'supplements'} found
         </Text>
         
@@ -348,18 +365,21 @@ function RecommendScreen() {
           filteredRecommendations.map(recommendation => (
             <TouchableOpacity
               key={recommendation.id}
-              style={styles.recommendationCard}
+              style={[styles.recommendationCard, { 
+                backgroundColor: colors.cardBg,
+                shadowColor: colors.text
+              }]}
               onPress={() => openSupplementDetail(recommendation)}
             >
               <Image source={{ uri: recommendation.image }} style={styles.recommendationImage} />
               <View style={styles.recommendationContent}>
-                <Text style={styles.recommendationName}>{recommendation.name}</Text>
-                <Text style={styles.recommendationCategory}>{recommendation.category}</Text>
+                <Text style={[styles.recommendationName, { color: colors.text }]}>{recommendation.name}</Text>
+                <Text style={[styles.recommendationCategory, { color: colors.textSecondary }]}>{recommendation.category}</Text>
                 
                 <View style={styles.benefitsContainer}>
                   {recommendation.benefits.slice(0, 3).map((benefit, index) => (
-                    <View key={index} style={styles.benefitTag}>
-                      <Text style={styles.benefitText}>{benefit}</Text>
+                    <View key={index} style={[styles.benefitTag, { backgroundColor: colors.inputBg }]}>
+                      <Text style={[styles.benefitText, { color: colors.text }]}>{benefit}</Text>
                     </View>
                   ))}
                 </View>
@@ -370,9 +390,9 @@ function RecommendScreen() {
           ))
         ) : (
           <View style={styles.noResultsContainer}>
-            <Ionicons name="search" size={60} color={COLORS.border} />
-            <Text style={styles.noResultsText}>No supplements found</Text>
-            <Text style={styles.noResultsSubtext}>Try adjusting your search or filters</Text>
+            <Ionicons name="search" size={60} color={colors.textSecondary} />
+            <Text style={[styles.noResultsText, { color: colors.text }]}>No supplements found</Text>
+            <Text style={[styles.noResultsSubtext, { color: colors.textSecondary }]}>Try adjusting your search or filters</Text>
           </View>
         )}
       </ScrollView>
@@ -384,14 +404,14 @@ function RecommendScreen() {
         visible={modalVisible}
         onRequestClose={() => setModalVisible(false)}
       >
-        <View style={styles.modalOverlay}>
-          <View style={styles.modalContent}>
+        <View style={[styles.modalOverlay, { backgroundColor: 'rgba(0,0,0,0.5)' }]}>
+          <View style={[styles.modalContent, { backgroundColor: colors.cardBg }]}>
             {selectedSupplement && (
               <>
-                <View style={styles.modalHeader}>
-                  <Text style={styles.modalTitle}>{selectedSupplement.name}</Text>
+                <View style={[styles.modalHeader, { borderBottomColor: colors.border }]}>
+                  <Text style={[styles.modalTitle, { color: colors.text }]}>{selectedSupplement.name}</Text>
                   <TouchableOpacity onPress={() => setModalVisible(false)}>
-                    <Ionicons name="close" size={24} color={COLORS.text} />
+                    <Ionicons name="close" size={24} color={colors.text} />
                   </TouchableOpacity>
                 </View>
                 
@@ -400,62 +420,62 @@ function RecommendScreen() {
                   
                   {/* Match bar in modal */}
                   <View style={styles.modalMatchContainer}>
-                    <Text style={styles.modalMatchLabel}>Match for your profile:</Text>
-                    <Text style={styles.modalMatchPercentage}>{selectedSupplement.match}%</Text>
-                    <View style={styles.modalMatchBarContainer}>
+                    <Text style={[styles.modalMatchLabel, { color: colors.text }]}>Match for your profile:</Text>
+                    <Text style={[styles.modalMatchPercentage, { color: colors.primary }]}>{selectedSupplement.match}%</Text>
+                    <View style={[styles.modalMatchBarContainer, { backgroundColor: colors.inputBg }]}>
                       <View 
                         style={[
                           styles.modalMatchBar, 
-                          {width: `${selectedSupplement.match}%`}
+                          {width: `${selectedSupplement.match}%`, backgroundColor: colors.primary}
                         ]} 
                       />
                     </View>
                   </View>
                   
                   {/* Description */}
-                  <Text style={styles.sectionTitle}>Description</Text>
-                  <Text style={styles.modalDescription}>{selectedSupplement.description}</Text>
+                  <Text style={[styles.sectionTitle, { color: colors.text }]}>Description</Text>
+                  <Text style={[styles.modalDescription, { color: colors.text }]}>{selectedSupplement.description}</Text>
                   
                   {/* Benefits */}
-                  <Text style={styles.sectionTitle}>Benefits</Text>
+                  <Text style={[styles.sectionTitle, { color: colors.text }]}>Benefits</Text>
                   <View style={styles.modalBenefitsContainer}>
                     {selectedSupplement.benefits.map((benefit, index) => (
                       <View key={index} style={styles.modalBenefitItem}>
-                        <Ionicons name="checkmark-circle" size={18} color={COLORS.success} style={styles.benefitIcon} />
-                        <Text style={styles.modalBenefitText}>{benefit}</Text>
+                        <Ionicons name="checkmark-circle" size={18} color={colors.success} style={styles.benefitIcon} />
+                        <Text style={[styles.modalBenefitText, { color: colors.text }]}>{benefit}</Text>
                       </View>
                     ))}
                   </View>
                   
                   {/* Recommended Dosage */}
-                  <Text style={styles.sectionTitle}>Recommended Dosage</Text>
-                  <View style={styles.dosageContainer}>
-                    <Ionicons name="flask-outline" size={20} color={COLORS.primary} style={styles.dosageIcon} />
-                    <Text style={styles.dosageText}>{selectedSupplement.dosage}</Text>
+                  <Text style={[styles.sectionTitle, { color: colors.text }]}>Recommended Dosage</Text>
+                  <View style={[styles.dosageContainer, { backgroundColor: colors.inputBg }]}>
+                    <Ionicons name="flask-outline" size={20} color={colors.primary} style={styles.dosageIcon} />
+                    <Text style={[styles.dosageText, { color: colors.text }]}>{selectedSupplement.dosage}</Text>
                   </View>
                   
                   {/* Why it's recommended */}
-                  <Text style={styles.sectionTitle}>Why It's Recommended For You</Text>
+                  <Text style={[styles.sectionTitle, { color: colors.text }]}>Why It's Recommended For You</Text>
                   <View style={styles.reasonsContainer}>
                     {selectedSupplement.reasons.map((reason, index) => (
-                      <View key={index} style={styles.reasonItem}>
-                        <Text style={styles.reasonNumber}>{index + 1}</Text>
-                        <Text style={styles.reasonText}>{reason}</Text>
+                      <View key={index} style={[styles.reasonItem, { backgroundColor: colors.inputBg }]}>
+                        <Text style={[styles.reasonNumber, { backgroundColor: colors.primary, color: colors.secondary }]}>{index + 1}</Text>
+                        <Text style={[styles.reasonText, { color: colors.text }]}>{reason}</Text>
                       </View>
                     ))}
                   </View>
                 </ScrollView>
                 
-                <View style={styles.modalActions}>
+                <View style={[styles.modalActions, { borderTopColor: colors.border }]}>
                   <TouchableOpacity 
-                    style={styles.actionButton}
+                    style={[styles.actionButton, { backgroundColor: colors.primary }]}
                     onPress={() => {
                       setModalVisible(false);
                       // In a real app, navigate to track page or add to supplement routine
                       router.push('/track');
                     }}
                   >
-                    <Text style={styles.actionButtonText}>Add to My Supplements</Text>
+                    <Text style={[styles.actionButtonText, { color: colors.secondary }]}>Add to My Supplements</Text>
                   </TouchableOpacity>
                 </View>
               </>
@@ -470,11 +490,9 @@ function RecommendScreen() {
 const styles = StyleSheet.create({
   safeArea: {
     flex: 1,
-    backgroundColor: COLORS.background,
   },
   container: {
     flex: 1,
-    backgroundColor: COLORS.background,
   },
   contentContainer: {
     padding: 20,
@@ -488,7 +506,6 @@ const styles = StyleSheet.create({
   loadingText: {
     marginTop: 10,
     fontSize: 16,
-    color: COLORS.text,
   },
   header: {
     alignItems: 'center',
@@ -497,81 +514,69 @@ const styles = StyleSheet.create({
   title: {
     fontSize: 24,
     fontWeight: 'bold',
-    color: COLORS.text,
     marginTop: 12,
   },
   welcomeContainer: {
+    padding: 16,
+    borderRadius: 12,
     marginBottom: 20,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.1,
+    shadowRadius: 4,
+    elevation: 2,
   },
   welcomeText: {
     fontSize: 16,
-    color: COLORS.text,
+    lineHeight: 22,
     textAlign: 'center',
-    lineHeight: 24,
   },
   searchContainer: {
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: COLORS.cardBg,
-    borderRadius: 12,
     paddingHorizontal: 16,
-    marginBottom: 16,
     height: 50,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 1 },
-    shadowOpacity: 0.1,
-    shadowRadius: 2,
-    elevation: 2,
+    borderRadius: 25,
+    marginBottom: 16,
+    borderWidth: 1,
   },
   searchIcon: {
     marginRight: 10,
   },
   searchInput: {
     flex: 1,
-    height: '100%',
     fontSize: 16,
-    color: COLORS.text,
   },
   categoriesContainer: {
     marginBottom: 16,
   },
   categoriesContent: {
-    paddingRight: 20,
+    paddingRight: 16,
   },
   categoryButton: {
     paddingHorizontal: 16,
     paddingVertical: 8,
     borderRadius: 20,
     marginRight: 8,
-    backgroundColor: COLORS.inputBg,
-  },
-  categoryButtonActive: {
-    backgroundColor: COLORS.primary,
+    borderWidth: 1,
   },
   categoryButtonText: {
     fontSize: 14,
-    color: COLORS.textSecondary,
     fontWeight: '500',
-  },
-  categoryButtonTextActive: {
-    color: COLORS.secondary,
   },
   resultsText: {
     fontSize: 14,
-    color: COLORS.textSecondary,
     marginBottom: 16,
   },
   recommendationCard: {
-    backgroundColor: COLORS.cardBg,
-    borderRadius: 16,
-    overflow: 'hidden',
+    flexDirection: 'row',
+    borderRadius: 12,
     marginBottom: 16,
-    shadowColor: '#000',
+    overflow: 'hidden',
     shadowOffset: { width: 0, height: 2 },
     shadowOpacity: 0.1,
     shadowRadius: 4,
     elevation: 2,
-    flexDirection: 'row',
   },
   recommendationImage: {
     width: 100,
@@ -584,49 +589,44 @@ const styles = StyleSheet.create({
   },
   recommendationName: {
     fontSize: 16,
-    fontWeight: '600',
-    color: COLORS.text,
+    fontWeight: 'bold',
     marginBottom: 4,
   },
   recommendationCategory: {
     fontSize: 14,
-    color: COLORS.textSecondary,
     marginBottom: 8,
   },
   benefitsContainer: {
     flexDirection: 'row',
     flexWrap: 'wrap',
-    marginBottom: 12,
+    marginBottom: 10,
   },
   benefitTag: {
-    backgroundColor: COLORS.inputBg,
     paddingHorizontal: 8,
     paddingVertical: 4,
-    borderRadius: 6,
+    borderRadius: 12,
     marginRight: 6,
     marginBottom: 6,
   },
   benefitText: {
     fontSize: 12,
-    color: COLORS.text,
+    fontWeight: '500',
   },
   matchContainer: {
-    marginTop: 'auto',
+    marginTop: 8,
   },
   matchText: {
     fontSize: 14,
-    fontWeight: '600',
+    fontWeight: 'bold',
     marginBottom: 4,
   },
   matchBarContainer: {
     height: 4,
-    backgroundColor: '#E0E0E0',
     borderRadius: 2,
     overflow: 'hidden',
   },
   matchBar: {
     height: '100%',
-    borderRadius: 2,
   },
   noResultsContainer: {
     alignItems: 'center',
@@ -636,85 +636,81 @@ const styles = StyleSheet.create({
   noResultsText: {
     fontSize: 18,
     fontWeight: '600',
-    color: COLORS.text,
     marginTop: 16,
     marginBottom: 8,
   },
   noResultsSubtext: {
     fontSize: 14,
-    color: COLORS.textSecondary,
     textAlign: 'center',
   },
+  
+  // Modal styles
   modalOverlay: {
     flex: 1,
-    backgroundColor: 'rgba(0,0,0,0.5)',
-    justifyContent: 'flex-end',
+    justifyContent: 'center',
+    alignItems: 'center',
   },
   modalContent: {
-    backgroundColor: COLORS.cardBg,
-    borderTopLeftRadius: 24,
-    borderTopRightRadius: 24,
-    padding: 24,
-    maxHeight: '90%',
+    width: '90%',
+    maxHeight: '80%',
+    borderRadius: 16,
+    overflow: 'hidden',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 5 },
+    shadowOpacity: 0.3,
+    shadowRadius: 8,
+    elevation: 5,
   },
   modalHeader: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
-    marginBottom: 20,
+    paddingHorizontal: 16,
+    paddingVertical: 12,
+    borderBottomWidth: 1,
   },
   modalTitle: {
     fontSize: 20,
     fontWeight: 'bold',
-    color: COLORS.text,
   },
   modalBody: {
-    marginBottom: 20,
+    padding: 16,
   },
   modalImage: {
     width: '100%',
     height: 200,
-    borderRadius: 12,
-    marginBottom: 20,
+    borderRadius: 8,
+    marginBottom: 16,
   },
   modalMatchContainer: {
-    backgroundColor: COLORS.inputBg,
-    borderRadius: 12,
-    padding: 16,
     marginBottom: 20,
   },
   modalMatchLabel: {
-    fontSize: 14,
-    color: COLORS.textSecondary,
+    fontSize: 16,
     marginBottom: 8,
   },
   modalMatchPercentage: {
     fontSize: 18,
     fontWeight: 'bold',
-    color: COLORS.success,
-    marginBottom: 8,
+    marginBottom: 4,
   },
   modalMatchBarContainer: {
-    height: 8,
-    backgroundColor: '#E0E0E0',
-    borderRadius: 4,
+    height: 6,
+    borderRadius: 3,
     overflow: 'hidden',
   },
   modalMatchBar: {
     height: '100%',
-    backgroundColor: COLORS.success,
-    borderRadius: 4,
   },
   sectionTitle: {
     fontSize: 18,
-    fontWeight: '600',
-    color: COLORS.text,
+    fontWeight: 'bold',
     marginBottom: 12,
+    marginTop: 8,
   },
   modalDescription: {
-    fontSize: 15,
-    color: COLORS.text,
-    lineHeight: 22,
+    fontSize: 16,
+    lineHeight: 24,
     marginBottom: 20,
   },
   modalBenefitsContainer: {
@@ -729,24 +725,21 @@ const styles = StyleSheet.create({
     marginRight: 8,
   },
   modalBenefitText: {
-    fontSize: 15,
-    color: COLORS.text,
+    fontSize: 16,
   },
   dosageContainer: {
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: COLORS.inputBg,
-    borderRadius: 12,
     padding: 16,
+    borderRadius: 8,
     marginBottom: 20,
   },
   dosageIcon: {
     marginRight: 12,
   },
   dosageText: {
-    fontSize: 15,
-    color: COLORS.text,
-    fontWeight: '500',
+    fontSize: 16,
+    flex: 1,
   },
   reasonsContainer: {
     marginBottom: 20,
@@ -754,42 +747,41 @@ const styles = StyleSheet.create({
   reasonItem: {
     flexDirection: 'row',
     marginBottom: 12,
+    borderRadius: 8,
+    overflow: 'hidden',
   },
   reasonNumber: {
     width: 24,
     height: 24,
     borderRadius: 12,
-    backgroundColor: COLORS.primary,
-    color: COLORS.secondary,
     textAlign: 'center',
+    textAlignVertical: 'center',
     fontWeight: 'bold',
+    fontSize: 14,
     marginRight: 12,
-    lineHeight: 24,
+    marginLeft: 12,
+    marginVertical: 12,
   },
   reasonText: {
+    fontSize: 14,
     flex: 1,
-    fontSize: 15,
-    color: COLORS.text,
-    lineHeight: 22,
+    paddingVertical: 12,
+    paddingRight: 12,
   },
   modalActions: {
+    paddingHorizontal: 16,
+    paddingVertical: 12,
     borderTopWidth: 1,
-    borderTopColor: COLORS.border,
-    paddingTop: 16,
   },
   actionButton: {
-    backgroundColor: COLORS.primary,
-    borderRadius: 12,
-    paddingVertical: 16,
+    paddingVertical: 12,
+    borderRadius: 8,
     alignItems: 'center',
-    justifyContent: 'center',
   },
   actionButtonText: {
-    color: COLORS.secondary,
     fontSize: 16,
-    fontWeight: '600',
+    fontWeight: 'bold',
   },
 });
 
-// Wrap the component with the auth HOC
 export default withAuth(RecommendScreen); 

@@ -20,6 +20,9 @@ import { DismissKeyboardView } from '../services/keyboardUtils';
 import Logo from '../services/logoComponent';
 import { Ionicons } from '@expo/vector-icons';
 import StandardError from '../services/ErrorDisplay';
+import { useTheme } from '../services/themeContext';
+import ThemeToggle from '../components/ThemeToggle';
+import { getThemedStyles } from '../services/themeHelper';
 
 // PEAKMODE color theme based on logo
 const COLORS = {
@@ -40,6 +43,8 @@ const ANIM_DURATION = 180;
 const STAGGER_DELAY = 30;
 
 export default function SignupScreen() {
+  const { colors, isDarkMode } = useTheme();
+  const themedStyles = getThemedStyles(colors);
   const [fullName, setFullName] = useState('');
   const [email, setEmail] = useState('');
   const [username, setUsername] = useState('');
@@ -372,24 +377,25 @@ export default function SignupScreen() {
   // Render loading indicator during initial connectivity check
   if (isConnecting) {
     return (
-      <View style={styles.loadingContainer}>
-        <ActivityIndicator size="large" color={COLORS.primary} />
-        <Text style={styles.loadingText}>Checking connection...</Text>
+      <View style={[styles.loadingContainer, { backgroundColor: colors.background }]}>
+        <ActivityIndicator size="large" color={colors.primary} />
+        <Text style={[styles.loadingText, { color: colors.text }]}>Checking connection...</Text>
       </View>
     );
   }
 
   return (
-    <SafeAreaView style={styles.safeArea}>
+    <SafeAreaView style={[styles.safeArea, { backgroundColor: colors.background }]}>
       <KeyboardAvoidingView
         behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
-        style={styles.container}
+        style={{ flex: 1 }}
       >
         <ScrollView 
           contentContainerStyle={styles.scrollContent}
           showsVerticalScrollIndicator={false}
+          style={{ backgroundColor: colors.background }}
         >
-          <View style={styles.signupCard}>
+          <View style={[styles.signupCard, { backgroundColor: colors.cardBg, shadowColor: colors.text }]}>
             <Animated.View 
               style={[
                 styles.logoContainer,
@@ -408,6 +414,7 @@ export default function SignupScreen() {
             <Animated.Text 
               style={[
                 styles.headerText,
+                { color: colors.text },
                 {
                   opacity: headerAnim,
                   transform: [{ translateY: headerAnim.interpolate({
@@ -440,18 +447,18 @@ export default function SignupScreen() {
                   }
                 ]}
               >
-                <Text style={styles.label}>Full Name</Text>
-                <View style={styles.inputWrapper}>
-                  <Ionicons name="person-outline" size={20} color={COLORS.textSecondary} style={styles.inputIcon} />
+                <Text style={[styles.label, { color: colors.text }]}>Full Name</Text>
+                <View style={[styles.inputWrapper, { backgroundColor: colors.inputBg, borderColor: colors.border }]}>
+                  <Ionicons name="person-outline" size={20} color={colors.textSecondary} style={styles.inputIcon} />
                   <TextInput
-                    style={styles.input}
+                    style={[styles.input, { color: colors.text }]}
                     placeholder="Enter your full name"
                     value={fullName}
                     onChangeText={setFullName}
                     autoCapitalize="words"
                     autoComplete="off"
                     textContentType="none"
-                    placeholderTextColor={COLORS.textSecondary}
+                    placeholderTextColor={colors.textSecondary}
                   />
                 </View>
               </Animated.View>
@@ -468,11 +475,11 @@ export default function SignupScreen() {
                   }
                 ]}
               >
-                <Text style={styles.label}>Email</Text>
-                <View style={styles.inputWrapper}>
-                  <Ionicons name="mail-outline" size={20} color={COLORS.textSecondary} style={styles.inputIcon} />
+                <Text style={[styles.label, { color: colors.text }]}>Email</Text>
+                <View style={[styles.inputWrapper, { backgroundColor: colors.inputBg, borderColor: colors.border }]}>
+                  <Ionicons name="mail-outline" size={20} color={colors.textSecondary} style={styles.inputIcon} />
                   <TextInput
-                    style={styles.input}
+                    style={[styles.input, { color: colors.text }]}
                     placeholder="Enter your email"
                     value={email}
                     onChangeText={setEmail}
@@ -481,10 +488,10 @@ export default function SignupScreen() {
                     autoCorrect={false}
                     autoComplete="off"
                     textContentType="none"
-                    placeholderTextColor={COLORS.textSecondary}
+                    placeholderTextColor={colors.textSecondary}
                   />
                 </View>
-                <Text style={styles.hintText}>
+                <Text style={[styles.hintText, { color: colors.textSecondary }]}>
                   Please use a common email provider (gmail.com, yahoo.com, etc.)
                 </Text>
               </Animated.View>
@@ -501,21 +508,21 @@ export default function SignupScreen() {
                   }
                 ]}
               >
-                <Text style={styles.label}>Phone Number</Text>
-                <View style={styles.inputWrapper}>
-                  <Ionicons name="call-outline" size={20} color={COLORS.textSecondary} style={styles.inputIcon} />
+                <Text style={[styles.label, { color: colors.text }]}>Phone Number</Text>
+                <View style={[styles.inputWrapper, { backgroundColor: colors.inputBg, borderColor: colors.border }]}>
+                  <Ionicons name="call-outline" size={20} color={colors.textSecondary} style={styles.inputIcon} />
                   <TextInput
-                    style={styles.input}
+                    style={[styles.input, { color: colors.text }]}
                     placeholder="Enter your phone number"
                     value={phone}
                     onChangeText={setPhone}
                     keyboardType="phone-pad"
                     autoComplete="off"
                     textContentType="telephoneNumber"
-                    placeholderTextColor={COLORS.textSecondary}
+                    placeholderTextColor={colors.textSecondary}
                   />
                 </View>
-                <Text style={styles.hintText}>
+                <Text style={[styles.hintText, { color: colors.textSecondary }]}>
                   Please enter a valid phone number (10-15 digits)
                 </Text>
               </Animated.View>
@@ -532,11 +539,11 @@ export default function SignupScreen() {
                   }
                 ]}
               >
-                <Text style={styles.label}>Username</Text>
-                <View style={styles.inputWrapper}>
-                  <Ionicons name="at-outline" size={20} color={COLORS.textSecondary} style={styles.inputIcon} />
+                <Text style={[styles.label, { color: colors.text }]}>Username</Text>
+                <View style={[styles.inputWrapper, { backgroundColor: colors.inputBg, borderColor: colors.border }]}>
+                  <Ionicons name="at-outline" size={20} color={colors.textSecondary} style={styles.inputIcon} />
                   <TextInput
-                    style={styles.input}
+                    style={[styles.input, { color: colors.text }]}
                     placeholder="Choose a username"
                     value={username}
                     onChangeText={setUsername}
@@ -544,7 +551,7 @@ export default function SignupScreen() {
                     autoCorrect={false}
                     autoComplete="off"
                     textContentType="none"
-                    placeholderTextColor={COLORS.textSecondary}
+                    placeholderTextColor={colors.textSecondary}
                   />
                 </View>
               </Animated.View>
@@ -561,11 +568,11 @@ export default function SignupScreen() {
                   }
                 ]}
               >
-                <Text style={styles.label}>Password</Text>
-                <View style={styles.passwordContainer}>
-                  <Ionicons name="lock-closed-outline" size={20} color={COLORS.textSecondary} style={styles.inputIcon} />
+                <Text style={[styles.label, { color: colors.text }]}>Password</Text>
+                <View style={[styles.passwordContainer, { backgroundColor: colors.inputBg, borderColor: colors.border }]}>
+                  <Ionicons name="lock-closed-outline" size={20} color={colors.textSecondary} style={styles.inputIcon} />
                   <TextInput
-                    style={[styles.input, styles.passwordInput]}
+                    style={[styles.input, styles.passwordInput, { color: colors.text }]}
                     placeholder="Create a password"
                     value={password}
                     onChangeText={setPassword}
@@ -575,7 +582,7 @@ export default function SignupScreen() {
                     autoComplete="off"
                     textContentType="oneTimeCode"
                     spellCheck={false}
-                    placeholderTextColor={COLORS.textSecondary}
+                    placeholderTextColor={colors.textSecondary}
                   />
                   <TouchableOpacity 
                     style={styles.passwordToggle}
@@ -584,11 +591,11 @@ export default function SignupScreen() {
                     <Ionicons 
                       name={showPassword ? 'eye-off' : 'eye'} 
                       size={24} 
-                      color={COLORS.textSecondary} 
+                      color={colors.textSecondary} 
                     />
                   </TouchableOpacity>
                 </View>
-                <Text style={styles.hintText}>
+                <Text style={[styles.hintText, { color: colors.textSecondary }]}>
                   Password must be 8-20 characters and include uppercase, lowercase, number, and special character.
                 </Text>
               </Animated.View>
@@ -605,11 +612,11 @@ export default function SignupScreen() {
                   }
                 ]}
               >
-                <Text style={styles.label}>Confirm Password</Text>
-                <View style={styles.passwordContainer}>
-                  <Ionicons name="lock-closed-outline" size={20} color={COLORS.textSecondary} style={styles.inputIcon} />
+                <Text style={[styles.label, { color: colors.text }]}>Confirm Password</Text>
+                <View style={[styles.passwordContainer, { backgroundColor: colors.inputBg, borderColor: colors.border }]}>
+                  <Ionicons name="lock-closed-outline" size={20} color={colors.textSecondary} style={styles.inputIcon} />
                   <TextInput
-                    style={[styles.input, styles.passwordInput]}
+                    style={[styles.input, styles.passwordInput, { color: colors.text }]}
                     placeholder="Confirm your password"
                     value={confirmPassword}
                     onChangeText={setConfirmPassword}
@@ -619,7 +626,7 @@ export default function SignupScreen() {
                     autoComplete="off"
                     textContentType="oneTimeCode"
                     spellCheck={false}
-                    placeholderTextColor={COLORS.textSecondary}
+                    placeholderTextColor={colors.textSecondary}
                   />
                   <TouchableOpacity 
                     style={styles.passwordToggle}
@@ -628,7 +635,7 @@ export default function SignupScreen() {
                     <Ionicons 
                       name={showConfirmPassword ? 'eye-off' : 'eye'} 
                       size={24} 
-                      color={COLORS.textSecondary} 
+                      color={colors.textSecondary} 
                     />
                   </TouchableOpacity>
                 </View>
@@ -647,15 +654,15 @@ export default function SignupScreen() {
                 }}
               >
                 <TouchableOpacity
-                  style={styles.signupButton}
+                  style={[styles.signupButton, { backgroundColor: colors.primary }]}
                   onPress={handleSignup}
                   disabled={loading}
                   activeOpacity={0.8}
                 >
                   {loading ? (
-                    <ActivityIndicator color="#FFFFFF" />
+                    <ActivityIndicator color={colors.secondary} />
                   ) : (
-                    <Text style={styles.signupButtonText}>Create Account</Text>
+                    <Text style={[styles.signupButtonText, { color: colors.secondary }]}>Create Account</Text>
                   )}
                 </TouchableOpacity>
               </Animated.View>
@@ -669,9 +676,9 @@ export default function SignupScreen() {
                   }
                 ]}
               >
-                <View style={styles.orLine}></View>
-                <Text style={styles.orText}>OR</Text>
-                <View style={styles.orLine}></View>
+                <View style={[styles.orLine, { backgroundColor: colors.border }]}></View>
+                <Text style={[styles.orText, { color: colors.textSecondary }]}>OR</Text>
+                <View style={[styles.orLine, { backgroundColor: colors.border }]}></View>
               </Animated.View>
               
               <Animated.View
@@ -684,11 +691,11 @@ export default function SignupScreen() {
                 }}
               >
                 <TouchableOpacity
-                  style={styles.loginButton}
+                  style={[styles.loginButton, { borderColor: colors.primary }]}
                   onPress={handleGoBack}
                   activeOpacity={0.8}
                 >
-                  <Text style={styles.loginButtonText}>Login Instead</Text>
+                  <Text style={[styles.loginButtonText, { color: colors.primary }]}>Login Instead</Text>
                 </TouchableOpacity>
               </Animated.View>
             </View>
@@ -702,7 +709,6 @@ export default function SignupScreen() {
 const styles = StyleSheet.create({
   safeArea: {
     flex: 1,
-    backgroundColor: COLORS.background,
   },
   container: {
     flex: 1,
@@ -710,25 +716,22 @@ const styles = StyleSheet.create({
   },
   scrollContent: {
     flexGrow: 1,
+    padding: 20,
     paddingBottom: 40,
   },
   loadingContainer: {
     flex: 1,
     justifyContent: 'center',
     alignItems: 'center',
-    backgroundColor: COLORS.background,
   },
   loadingText: {
     marginTop: 10,
     fontSize: 16,
-    color: COLORS.text,
   },
   signupCard: {
-    backgroundColor: COLORS.cardBg,
     borderRadius: 12,
     overflow: 'hidden',
     padding: 24,
-    shadowColor: '#000',
     shadowOffset: { width: 0, height: 2 },
     shadowOpacity: 0.1,
     shadowRadius: 5,
@@ -741,7 +744,6 @@ const styles = StyleSheet.create({
   headerText: {
     fontSize: 24,
     fontWeight: 'bold',
-    color: COLORS.text,
     marginBottom: 10,
     textAlign: 'center',
   },
@@ -755,15 +757,12 @@ const styles = StyleSheet.create({
     fontSize: 14,
     marginBottom: 8,
     fontWeight: '500',
-    color: COLORS.text,
   },
   inputWrapper: {
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: COLORS.inputBg,
     borderRadius: 8,
     borderWidth: 1,
-    borderColor: COLORS.border,
   },
   inputIcon: {
     paddingLeft: 12,
@@ -774,15 +773,12 @@ const styles = StyleSheet.create({
     height: 50,
     paddingHorizontal: 8,
     fontSize: 16,
-    color: COLORS.text,
   },
   passwordContainer: {
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: COLORS.inputBg,
     borderRadius: 8,
     borderWidth: 1,
-    borderColor: COLORS.border,
   },
   passwordInput: {
     paddingRight: 40,
@@ -794,14 +790,12 @@ const styles = StyleSheet.create({
   },
   hintText: {
     fontSize: 12,
-    color: COLORS.textSecondary,
     marginTop: 4,
   },
   errorMargin: {
     marginBottom: 20,
   },
   signupButton: {
-    backgroundColor: COLORS.primary,
     height: 50,
     borderRadius: 8,
     justifyContent: 'center',
@@ -810,7 +804,6 @@ const styles = StyleSheet.create({
     marginBottom: 24,
   },
   signupButtonText: {
-    color: COLORS.secondary,
     fontSize: 16,
     fontWeight: 'bold',
   },
@@ -822,24 +815,20 @@ const styles = StyleSheet.create({
   orLine: {
     flex: 1,
     height: 1,
-    backgroundColor: COLORS.border,
   },
   orText: {
-    color: COLORS.textSecondary,
     marginHorizontal: 10,
     fontSize: 14,
   },
   loginButton: {
     borderWidth: 1,
-    borderColor: COLORS.primary,
     height: 50,
     borderRadius: 8,
     justifyContent: 'center',
     alignItems: 'center',
   },
   loginButtonText: {
-    color: COLORS.primary,
     fontSize: 16,
     fontWeight: '500',
-  }
+  },
 }); 

@@ -19,20 +19,11 @@ import Logo from '../services/logoComponent';
 import { Ionicons } from '@expo/vector-icons';
 import { Animated } from 'react-native';
 import * as SecureStore from 'expo-secure-store';
+import { useTheme } from '../services/themeContext';
+import ThemeToggle from '../components/ThemeToggle';
+import { getThemedStyles } from '../services/themeHelper';
 
-// PEAKMODE color theme based on logo
-const COLORS = {
-  primary: '#F7B233', // Yellow/orange from logo
-  secondary: '#FFFFFF', // White for background
-  text: '#333333', // Dark text
-  textSecondary: '#777777', // Secondary text
-  background: '#F5F5F5', // Light gray background
-  cardBg: '#FFFFFF', // White background for cards
-  inputBg: '#F9F9F9', // Light gray for input backgrounds
-  border: '#DDDDDD', // Light gray for borders
-  error: '#FF6B6B', // Red for errors
-  success: '#4CAF50', // Green for success
-};
+// Remove hardcoded colors as we'll use theme context
 
 // Storage key for user data
 const USER_KEY = 'peakmode_user';
@@ -40,13 +31,14 @@ const USER_KEY = 'peakmode_user';
 // Fix React error by using memo and proper function declaration
 const SimpleErrorComponent = memo(function SimpleErrorComponent(props) {
   const { message, style } = props;
+  const { colors } = useTheme();
   
   // If there's no message, don't render anything
   if (!message) return null;
   
   return (
-    <View style={[styles.errorContainer, style]}>
-      <Text style={styles.errorText}>All 3 security answers are required</Text>
+    <View style={[styles.errorContainer, { backgroundColor: 'rgba(255, 107, 107, 0.1)', borderColor: colors.error }, style]}>
+      <Text style={[styles.errorText, { color: colors.error }]}>All 3 security answers are required</Text>
     </View>
   );
 });
@@ -55,6 +47,9 @@ const SimpleErrorComponent = memo(function SimpleErrorComponent(props) {
 const SimpleError = SimpleErrorComponent;
 
 export default function SecurityQuestionsScreen() {
+  const { colors, isDarkMode } = useTheme();
+  const themedStyles = getThemedStyles(colors);
+  
   const [allQuestions, setAllQuestions] = useState([]);
   const [questionData, setQuestionData] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -74,6 +69,11 @@ export default function SecurityQuestionsScreen() {
   const [answer3, setAnswer3] = useState('');
   
   const [username, setUsername] = useState('');
+  
+  // Track focus state for dropdowns
+  const [isFocus1, setIsFocus1] = useState(false);
+  const [isFocus2, setIsFocus2] = useState(false);
+  const [isFocus3, setIsFocus3] = useState(false);
   
   // Hide any bottom alert
   useEffect(() => {
@@ -244,23 +244,23 @@ export default function SecurityQuestionsScreen() {
   // Render dropdown item
   const renderItem = (item) => {
     return (
-      <View style={styles.dropdownItem}>
-        <Text style={styles.dropdownText}>{item.label}</Text>
+      <View style={[styles.dropdownItem, { borderBottomColor: colors.border }]}>
+        <Text style={[styles.dropdownText, { color: colors.text }]}>{item.label}</Text>
       </View>
     );
   };
   
   if (loading) {
     return (
-      <View style={styles.loadingContainer}>
-        <ActivityIndicator size="large" color={COLORS.primary} />
-        <Text style={styles.loadingText}>Loading security questions...</Text>
+      <View style={[styles.loadingContainer, { backgroundColor: colors.background }]}>
+        <ActivityIndicator size="large" color={colors.primary} />
+        <Text style={[styles.loadingText, { color: colors.text }]}>Loading security questions...</Text>
       </View>
     );
   }
   
   return (
-    <SafeAreaView style={styles.safeArea}>
+    <SafeAreaView style={[styles.safeArea, { backgroundColor: colors.background }]}>
       <KeyboardAvoidingView
         behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
         style={styles.container}
@@ -268,14 +268,15 @@ export default function SecurityQuestionsScreen() {
         <ScrollView 
           contentContainerStyle={styles.scrollContent}
           showsVerticalScrollIndicator={false}
+          keyboardShouldPersistTaps="handled" // Important for dropdowns
         >
-          <View style={styles.card}>
+          <View style={[styles.card, { backgroundColor: colors.cardBg, shadowColor: colors.text }]}>
             <View style={styles.logoContainer}>
               <Logo width={220} />
             </View>
             
-            <Text style={styles.headerText}>Security Questions</Text>
-            <Text style={styles.subHeaderText}>
+            <Text style={[styles.headerText, { color: colors.text }]}>Security Questions</Text>
+            <Text style={[styles.subHeaderText, { color: colors.textSecondary }]}>
               Please select and answer three security questions. These will be used to verify your identity if you need to reset your password.
             </Text>
             
@@ -287,33 +288,48 @@ export default function SecurityQuestionsScreen() {
             <View style={styles.formContainer}>
               {/* Question 1 */}
               <View style={styles.questionContainer}>
-                <Text style={styles.label}>Question 1</Text>
+                <Text style={[styles.label, { color: colors.text }]}>Question 1</Text>
                 <Dropdown
-                  style={styles.dropdown}
-                  placeholderStyle={styles.placeholderStyle}
-                  selectedTextStyle={styles.selectedTextStyle}
+                  style={[
+                    styles.dropdown, 
+                    { 
+                      borderColor: isFocus1 ? colors.primary : colors.border, 
+                      backgroundColor: colors.inputBg,
+                    }
+                  ]}
+                  containerStyle={[styles.dropdownContainer, { backgroundColor: colors.cardBg }]}
+                  placeholderStyle={[styles.placeholderStyle, { color: colors.textSecondary }]}
+                  selectedTextStyle={[styles.selectedTextStyle, { color: colors.text }]}
+                  itemContainerStyle={{ backgroundColor: colors.cardBg }}
+                  activeColor={`${colors.primary}20`} // 20% opacity of primary color
                   data={questionData}
-                  maxHeight={200}
+                  maxHeight={300}
                   labelField="label"
                   valueField="value"
                   placeholder="Select a security question"
                   value={question1}
+                  onFocus={() => setIsFocus1(true)}
+                  onBlur={() => setIsFocus1(false)}
                   onChange={item => {
                     setQuestion1(item.value);
+                    setIsFocus1(false);
                   }}
                   renderItem={renderItem}
+                  mode="modal"
+                  search={false}
                   renderRightIcon={() => (
-                    <Ionicons name="chevron-down" size={20} color={COLORS.text} />
+                    <Ionicons name="chevron-down" size={20} color={colors.text} />
                   )}
                 />
                 
-                <Text style={styles.label}>Answer</Text>
-                <View style={styles.inputWrapper}>
+                <Text style={[styles.label, { color: colors.text }]}>Answer</Text>
+                <View style={[styles.inputWrapper, { borderColor: colors.border, backgroundColor: colors.inputBg }]}>
                   <TextInput
-                    style={styles.input}
+                    style={[styles.input, { color: colors.text }]}
                     value={answer1}
                     onChangeText={setAnswer1}
                     placeholder="Your answer"
+                    placeholderTextColor={colors.textSecondary}
                     autoCapitalize="none"
                   />
                 </View>
@@ -321,33 +337,48 @@ export default function SecurityQuestionsScreen() {
               
               {/* Question 2 */}
               <View style={styles.questionContainer}>
-                <Text style={styles.label}>Question 2</Text>
+                <Text style={[styles.label, { color: colors.text }]}>Question 2</Text>
                 <Dropdown
-                  style={styles.dropdown}
-                  placeholderStyle={styles.placeholderStyle}
-                  selectedTextStyle={styles.selectedTextStyle}
+                  style={[
+                    styles.dropdown, 
+                    { 
+                      borderColor: isFocus2 ? colors.primary : colors.border, 
+                      backgroundColor: colors.inputBg,
+                    }
+                  ]}
+                  containerStyle={[styles.dropdownContainer, { backgroundColor: colors.cardBg }]}
+                  placeholderStyle={[styles.placeholderStyle, { color: colors.textSecondary }]}
+                  selectedTextStyle={[styles.selectedTextStyle, { color: colors.text }]}
+                  itemContainerStyle={{ backgroundColor: colors.cardBg }}
+                  activeColor={`${colors.primary}20`} // 20% opacity of primary color
                   data={questionData}
-                  maxHeight={200}
+                  maxHeight={300}
                   labelField="label"
                   valueField="value"
                   placeholder="Select a security question"
                   value={question2}
+                  onFocus={() => setIsFocus2(true)}
+                  onBlur={() => setIsFocus2(false)}
                   onChange={item => {
                     setQuestion2(item.value);
+                    setIsFocus2(false);
                   }}
                   renderItem={renderItem}
+                  mode="modal"
+                  search={false}
                   renderRightIcon={() => (
-                    <Ionicons name="chevron-down" size={20} color={COLORS.text} />
+                    <Ionicons name="chevron-down" size={20} color={colors.text} />
                   )}
                 />
                 
-                <Text style={styles.label}>Answer</Text>
-                <View style={styles.inputWrapper}>
+                <Text style={[styles.label, { color: colors.text }]}>Answer</Text>
+                <View style={[styles.inputWrapper, { borderColor: colors.border, backgroundColor: colors.inputBg }]}>
                   <TextInput
-                    style={styles.input}
+                    style={[styles.input, { color: colors.text }]}
                     value={answer2}
                     onChangeText={setAnswer2}
                     placeholder="Your answer"
+                    placeholderTextColor={colors.textSecondary}
                     autoCapitalize="none"
                   />
                 </View>
@@ -355,47 +386,62 @@ export default function SecurityQuestionsScreen() {
               
               {/* Question 3 */}
               <View style={styles.questionContainer}>
-                <Text style={styles.label}>Question 3</Text>
+                <Text style={[styles.label, { color: colors.text }]}>Question 3</Text>
                 <Dropdown
-                  style={styles.dropdown}
-                  placeholderStyle={styles.placeholderStyle}
-                  selectedTextStyle={styles.selectedTextStyle}
+                  style={[
+                    styles.dropdown, 
+                    { 
+                      borderColor: isFocus3 ? colors.primary : colors.border, 
+                      backgroundColor: colors.inputBg,
+                    }
+                  ]}
+                  containerStyle={[styles.dropdownContainer, { backgroundColor: colors.cardBg }]}
+                  placeholderStyle={[styles.placeholderStyle, { color: colors.textSecondary }]}
+                  selectedTextStyle={[styles.selectedTextStyle, { color: colors.text }]}
+                  itemContainerStyle={{ backgroundColor: colors.cardBg }}
+                  activeColor={`${colors.primary}20`} // 20% opacity of primary color
                   data={questionData}
-                  maxHeight={200}
+                  maxHeight={300}
                   labelField="label"
                   valueField="value"
                   placeholder="Select a security question"
                   value={question3}
+                  onFocus={() => setIsFocus3(true)}
+                  onBlur={() => setIsFocus3(false)}
                   onChange={item => {
                     setQuestion3(item.value);
+                    setIsFocus3(false);
                   }}
                   renderItem={renderItem}
+                  mode="modal"
+                  search={false}
                   renderRightIcon={() => (
-                    <Ionicons name="chevron-down" size={20} color={COLORS.text} />
+                    <Ionicons name="chevron-down" size={20} color={colors.text} />
                   )}
                 />
                 
-                <Text style={styles.label}>Answer</Text>
-                <View style={styles.inputWrapper}>
+                <Text style={[styles.label, { color: colors.text }]}>Answer</Text>
+                <View style={[styles.inputWrapper, { borderColor: colors.border, backgroundColor: colors.inputBg }]}>
                   <TextInput
-                    style={styles.input}
+                    style={[styles.input, { color: colors.text }]}
                     value={answer3}
                     onChangeText={setAnswer3}
                     placeholder="Your answer"
+                    placeholderTextColor={colors.textSecondary}
                     autoCapitalize="none"
                   />
                 </View>
               </View>
               
               <TouchableOpacity
-                style={styles.saveButton}
+                style={[styles.saveButton, { backgroundColor: colors.primary }]}
                 onPress={handleSaveQuestions}
                 disabled={saving}
               >
                 {saving ? (
-                  <ActivityIndicator color="#FFFFFF" />
+                  <ActivityIndicator color={colors.secondary} />
                 ) : (
-                  <Text style={styles.saveButtonText}>Save Security Questions</Text>
+                  <Text style={[styles.saveButtonText, { color: colors.secondary }]}>Save Security Questions</Text>
                 )}
               </TouchableOpacity>
               
@@ -403,7 +449,7 @@ export default function SecurityQuestionsScreen() {
                 style={styles.skipButton}
                 onPress={() => router.replace('/')}
               >
-                <Text style={styles.skipButtonText}>Skip for Now</Text>
+                <Text style={[styles.skipButtonText, { color: colors.textSecondary }]}>Skip for Now</Text>
               </TouchableOpacity>
             </View>
           </View>
@@ -416,7 +462,6 @@ export default function SecurityQuestionsScreen() {
 const styles = StyleSheet.create({
   safeArea: {
     flex: 1,
-    backgroundColor: COLORS.background,
   },
   container: {
     flex: 1,
@@ -431,18 +476,14 @@ const styles = StyleSheet.create({
     flex: 1,
     justifyContent: 'center',
     alignItems: 'center',
-    backgroundColor: COLORS.background,
   },
   loadingText: {
     marginTop: 10,
     fontSize: 16,
-    color: COLORS.text,
   },
   card: {
-    backgroundColor: COLORS.cardBg,
     borderRadius: 12,
     padding: 24,
-    shadowColor: '#000',
     shadowOffset: { width: 0, height: 2 },
     shadowOpacity: 0.1,
     shadowRadius: 5,
@@ -455,13 +496,11 @@ const styles = StyleSheet.create({
   headerText: {
     fontSize: 24,
     fontWeight: 'bold',
-    color: COLORS.text,
     textAlign: 'center',
     marginBottom: 10,
   },
   subHeaderText: {
     fontSize: 14,
-    color: COLORS.textSecondary,
     textAlign: 'center',
     marginBottom: 20,
     lineHeight: 20,
@@ -471,65 +510,66 @@ const styles = StyleSheet.create({
   },
   questionContainer: {
     marginBottom: 20,
+    zIndex: 1000, // Ensure dropdown is above other elements
   },
   label: {
     fontSize: 14,
     fontWeight: '500',
-    color: COLORS.text,
     marginBottom: 8,
   },
   // Styles for Dropdown component
   dropdown: {
     height: 50,
     borderWidth: 1,
-    borderColor: COLORS.border,
     borderRadius: 8,
-    backgroundColor: COLORS.inputBg,
     paddingHorizontal: 16,
     marginBottom: 15,
   },
+  dropdownContainer: {
+    borderRadius: 8,
+    overflow: 'hidden',
+    shadowColor: "#000",
+    shadowOffset: {
+      width: 0,
+      height: 2,
+    },
+    shadowOpacity: 0.25,
+    shadowRadius: 3.84,
+    elevation: 5,
+    zIndex: 9999,
+  },
   placeholderStyle: {
     fontSize: 16,
-    color: COLORS.textSecondary,
   },
   selectedTextStyle: {
     fontSize: 16,
-    color: COLORS.text,
   },
   dropdownItem: {
     padding: 16,
     borderBottomWidth: 1,
-    borderBottomColor: COLORS.border,
   },
   dropdownText: {
     fontSize: 16,
-    color: COLORS.text,
   },
   inputWrapper: {
     flexDirection: 'row',
     alignItems: 'center',
     borderWidth: 1,
-    borderColor: COLORS.border,
     borderRadius: 8,
-    backgroundColor: COLORS.inputBg,
   },
   input: {
     flex: 1,
     height: 50,
     paddingHorizontal: 16,
     fontSize: 16,
-    color: COLORS.text,
   },
   errorContainer: {
-    backgroundColor: 'rgba(255, 107, 107, 0.1)',
     borderWidth: 1,
-    borderColor: COLORS.error,
     borderRadius: 8,
     padding: 16,
     marginBottom: 16,
   },
   errorText: {
-    color: COLORS.error,
     fontSize: 14,
     textAlign: 'center',
   },
@@ -537,7 +577,6 @@ const styles = StyleSheet.create({
     marginBottom: 16,
   },
   saveButton: {
-    backgroundColor: COLORS.primary,
     height: 50,
     borderRadius: 8,
     justifyContent: 'center',
@@ -546,7 +585,6 @@ const styles = StyleSheet.create({
     marginBottom: 15,
   },
   saveButtonText: {
-    color: COLORS.secondary,
     fontSize: 16,
     fontWeight: 'bold',
   },
@@ -557,7 +595,6 @@ const styles = StyleSheet.create({
     alignItems: 'center',
   },
   skipButtonText: {
-    color: COLORS.textSecondary,
     fontSize: 16,
   },
 }); 

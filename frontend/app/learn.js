@@ -17,6 +17,8 @@ import { Ionicons } from '@expo/vector-icons';
 import { router } from 'expo-router';
 import Logo from '../services/logoComponent';
 import { withAuth, useAuth } from '../services/authContext';
+import { useTheme } from '../services/themeContext';
+import { getThemedStyles, getTextStyle } from '../services/themeHelper';
 
 // PEAKMODE color theme based on logo
 const COLORS = {
@@ -462,6 +464,9 @@ const contentCategories = [
 
 function LearnScreen() {
   const { user } = useAuth();
+  const { colors, isDarkMode } = useTheme();
+  const themedStyles = getThemedStyles(colors);
+  
   const [loading, setLoading] = useState(true);
   const [articles, setArticles] = useState([]);
   const [filteredArticles, setFilteredArticles] = useState([]);
@@ -498,143 +503,186 @@ function LearnScreen() {
       const lowerCaseQuery = searchQuery.toLowerCase();
       filtered = filtered.filter(item => 
         item.title.toLowerCase().includes(lowerCaseQuery) || 
+        item.content.toLowerCase().includes(lowerCaseQuery) ||
         item.summary.toLowerCase().includes(lowerCaseQuery) ||
-        item.tags.some(tag => tag.includes(lowerCaseQuery))
+        item.tags.some(tag => tag.toLowerCase().includes(lowerCaseQuery))
       );
     }
     
     // Filter by category
     if (selectedCategory !== 'all') {
-      filtered = filtered.filter(item => {
-        const lowerCaseCategory = item.category.toLowerCase();
-        switch(selectedCategory) {
-          case 'vitamin':
-            return lowerCaseCategory.includes('vitamin');
-          case 'mineral':
-            return lowerCaseCategory.includes('mineral');
-          case 'sleep':
-            return lowerCaseCategory.includes('sleep') || item.tags.includes('sleep');
-          case 'herbs':
-            return lowerCaseCategory.includes('herb') || item.tags.includes('herbs');
-          case 'gut':
-            return lowerCaseCategory.includes('gut') || item.tags.includes('gut health');
-          default:
-            return true;
-        }
-      });
+      filtered = filtered.filter(item => 
+        item.category.toLowerCase().includes(selectedCategory.toLowerCase())
+      );
     }
     
     setFilteredArticles(filtered);
   }, [searchQuery, selectedCategory, articles]);
 
-  // View article details
+  // Open article detail modal
   const openArticleDetail = (article) => {
     setSelectedArticle(article);
     setModalVisible(true);
   };
 
-  if (loading) {
-    return (
-      <SafeAreaView style={styles.safeArea}>
-        <View style={styles.loadingContainer}>
-          <ActivityIndicator size="large" color={COLORS.primary} />
-          <Text style={styles.loadingText}>Loading educational content...</Text>
-        </View>
-      </SafeAreaView>
-    );
-  }
-
-  // Function to convert markdown-like content to basic formatted paragraphs
+  // Render markdown-like content with basic formatting
   const renderFormattedContent = (content) => {
-    // Split content into paragraphs
-    const paragraphs = content.split('\n\n');
+    if (!content) return null;
     
-    return paragraphs.map((paragraph, index) => {
-      // Check if it's a header
-      if (paragraph.startsWith('###')) {
+    // Split content by newlines
+    const lines = content.split('\n');
+    
+    return lines.map((line, index) => {
+      // Heading 3 (###)
+      if (line.startsWith('### ')) {
         return (
-          <Text key={index} style={styles.contentHeader}>
-            {paragraph.replace('###', '').trim()}
+          <Text key={index} style={[styles.contentHeading, { color: colors.text }]}>
+            {line.substring(4)}
           </Text>
         );
-      } 
-      // Check if it's a list item
-      else if (paragraph.includes('- ')) {
-        const listItems = paragraph.split('\n- ');
+      }
+      // Bold/List item (- )
+      else if (line.trim().startsWith('- ')) {
         return (
-          <View key={index} style={styles.listContainer}>
-            {listItems.map((item, itemIndex) => {
-              if (itemIndex === 0 && !item.startsWith('- ')) {
-                return <Text key={`${index}-title-${itemIndex}`} style={styles.contentText}>{item}</Text>;
-              }
-              const listItemText = itemIndex === 0 ? item.replace('- ', '') : item;
-              return (
-                <View key={`${index}-item-${itemIndex}`} style={styles.listItem}>
-                  <Text style={styles.bulletPoint}>•</Text>
-                  <Text style={styles.listItemText}>{listItemText}</Text>
-                </View>
-              );
-            })}
+          <View key={index} style={styles.listItemContainer}>
+            <Text style={[styles.listBullet, { color: colors.primary }]}>•</Text>
+            <Text style={[styles.listItemText, { color: colors.text }]}>
+              {line.substring(line.indexOf('- ') + 2)}
+            </Text>
           </View>
         );
-      } 
+      }
+      // Numbered List (1., 2., etc.)
+      else if (/^\d+\.\s/.test(line.trim())) {
+        const number = line.trim().match(/^\d+/)[0];
+        return (
+          <View key={index} style={styles.listItemContainer}>
+            <Text style={[styles.listNumber, { color: colors.primary }]}>{number}.</Text>
+            <Text style={[styles.listItemText, { color: colors.text }]}>
+              {line.trim().substring(number.length + 2)}
+            </Text>
+          </View>
+        );
+      }
+      // Bold Text
+      else if (line.trim().startsWith('**') && line.trim().endsWith('**')) {
+        return (
+          <Text key={index} style={[styles.boldText, { color: colors.text }]}>
+            {line.trim().substring(2, line.trim().length - 2)}
+          </Text>
+        );
+      }
+      // Empty line as paragraph break
+      else if (line.trim() === '') {
+        return <View key={index} style={{ height: 12 }} />;
+      }
       // Regular paragraph
       else {
         return (
-          <Text key={index} style={styles.contentText}>
-            {paragraph}
+          <Text key={index} style={[styles.contentParagraph, { color: colors.text }]}>
+            {line}
           </Text>
         );
       }
     });
   };
 
+  // Render article cards
+  const renderArticleCard = ({ item }) => (
+    <TouchableOpacity 
+      style={[styles.articleCard, { backgroundColor: colors.cardBg, shadowColor: colors.text }]} 
+      onPress={() => openArticleDetail(item)}
+    >
+      <Image 
+        source={{ uri: item.image }} 
+        style={styles.articleImage} 
+      />
+      <View style={styles.articleCardContent}>
+        <View style={styles.articleCardHeader}>
+          <Text style={[styles.articleCategory, { color: colors.primary }]}>
+            {item.category}
+          </Text>
+          <View style={styles.readTimeContainer}>
+            <Ionicons name="time-outline" size={12} color={colors.textSecondary} />
+            <Text style={[styles.readTime, { color: colors.textSecondary }]}>
+              {item.readTime} min read
+            </Text>
+          </View>
+        </View>
+        <Text style={[styles.articleTitle, { color: colors.text }]}>{item.title}</Text>
+        <Text 
+          style={[styles.articleSummary, { color: colors.textSecondary }]} 
+          numberOfLines={2}
+        >
+          {item.summary}
+        </Text>
+      </View>
+    </TouchableOpacity>
+  );
+
+  if (loading) {
+    return (
+      <SafeAreaView style={[styles.safeArea, { backgroundColor: colors.background }]}>
+        <View style={[styles.loadingContainer, { backgroundColor: colors.background }]}>
+          <ActivityIndicator size="large" color={colors.primary} />
+          <Text style={[styles.loadingText, { color: colors.textSecondary }]}>Loading content...</Text>
+        </View>
+      </SafeAreaView>
+    );
+  }
+
   return (
-    <SafeAreaView style={styles.safeArea}>
-      <ScrollView style={styles.container} contentContainerStyle={styles.contentContainer}>
-        {/* Header Section */}
+    <SafeAreaView style={[styles.safeArea, { backgroundColor: colors.background }]}>
+      <View style={[styles.container, { backgroundColor: colors.background }]}>
+        {/* Header */}
         <View style={styles.header}>
           <Logo width={150} />
-          <Text style={styles.title}>Learn & Grow</Text>
         </View>
         
         {/* Search Bar */}
         <View style={styles.searchContainer}>
-          <Ionicons name="search-outline" size={20} color={COLORS.textSecondary} style={styles.searchIcon} />
-          <TextInput
-            style={styles.searchInput}
-            placeholder="Search articles..."
-            value={searchQuery}
-            onChangeText={setSearchQuery}
-            placeholderTextColor={COLORS.textSecondary}
-          />
-          {searchQuery ? (
-            <TouchableOpacity onPress={() => setSearchQuery('')}>
-              <Ionicons name="close-circle" size={20} color={COLORS.textSecondary} />
-            </TouchableOpacity>
-          ) : null}
+          <View style={[styles.searchBar, { backgroundColor: colors.inputBg, borderColor: colors.border }]}>
+            <Ionicons name="search" size={20} color={colors.textSecondary} />
+            <TextInput
+              style={[styles.searchInput, { color: colors.text }]}
+              placeholder="Search for topics, nutrients..."
+              placeholderTextColor={colors.textSecondary}
+              value={searchQuery}
+              onChangeText={setSearchQuery}
+            />
+            {searchQuery.length > 0 && (
+              <TouchableOpacity onPress={() => setSearchQuery('')}>
+                <Ionicons name="close-circle" size={20} color={colors.textSecondary} />
+              </TouchableOpacity>
+            )}
+          </View>
         </View>
         
-        {/* Category Filter */}
+        {/* Categories */}
         <ScrollView 
           horizontal 
           showsHorizontalScrollIndicator={false} 
           style={styles.categoriesContainer}
           contentContainerStyle={styles.categoriesContent}
         >
-          {contentCategories.map(category => (
+          {contentCategories.map((category) => (
             <TouchableOpacity
               key={category.id}
               style={[
-                styles.categoryButton,
-                selectedCategory === category.id && styles.categoryButtonActive
+                styles.categoryChip,
+                selectedCategory === category.id && styles.categoryChipSelected,
+                { 
+                  backgroundColor: selectedCategory === category.id ? colors.primary : colors.inputBg,
+                  borderColor: colors.border
+                }
               ]}
               onPress={() => setSelectedCategory(category.id)}
             >
               <Text
                 style={[
-                  styles.categoryButtonText,
-                  selectedCategory === category.id && styles.categoryButtonTextActive
+                  styles.categoryText,
+                  selectedCategory === category.id && styles.categoryTextSelected,
+                  { color: selectedCategory === category.id ? colors.secondary : colors.text }
                 ]}
               >
                 {category.name}
@@ -643,137 +691,124 @@ function LearnScreen() {
           ))}
         </ScrollView>
         
-        {/* Results Count */}
-        <Text style={styles.resultsText}>
-          {filteredArticles.length} {filteredArticles.length === 1 ? 'article' : 'articles'} found
-        </Text>
-        
-        {/* Articles List */}
-        {filteredArticles.length > 0 ? (
-          filteredArticles.map(article => (
-            <TouchableOpacity
-              key={article.id}
-              style={styles.articleCard}
-              onPress={() => openArticleDetail(article)}
-            >
-              <Image source={{ uri: article.image }} style={styles.articleImage} />
-              <View style={styles.articleContent}>
-                <View style={styles.articleMeta}>
-                  <View style={styles.categoryBadge}>
-                    <Text style={styles.categoryText}>{article.category}</Text>
-                  </View>
-                  <Text style={styles.readTime}>{article.readTime} min read</Text>
-                </View>
-                
-                <Text style={styles.articleTitle}>{article.title}</Text>
-                <Text style={styles.articleSummary} numberOfLines={3}>{article.summary}</Text>
-                
-                <View style={styles.articleFooter}>
-                  <Text style={styles.articleDate}>{article.date}</Text>
-                  <Text style={styles.readMoreText}>Read more</Text>
-                </View>
-              </View>
-            </TouchableOpacity>
-          ))
-        ) : (
+        {/* Content List */}
+        {filteredArticles.length === 0 ? (
           <View style={styles.noResultsContainer}>
-            <Ionicons name="search" size={60} color={COLORS.border} />
-            <Text style={styles.noResultsText}>No articles found</Text>
-            <Text style={styles.noResultsSubtext}>Try adjusting your search or filters</Text>
+            <Ionicons name="search-outline" size={60} color={colors.textSecondary} />
+            <Text style={[styles.noResultsText, { color: colors.textSecondary }]}>
+              No articles found for "{searchQuery}"
+            </Text>
+            <TouchableOpacity 
+              style={[styles.resetButton, { backgroundColor: colors.primary }]}
+              onPress={() => {
+                setSearchQuery('');
+                setSelectedCategory('all');
+              }}
+            >
+              <Text style={[styles.resetButtonText, { color: colors.secondary }]}>Reset Filters</Text>
+            </TouchableOpacity>
           </View>
+        ) : (
+          <FlatList
+            data={filteredArticles}
+            renderItem={renderArticleCard}
+            keyExtractor={item => item.id.toString()}
+            showsVerticalScrollIndicator={false}
+            contentContainerStyle={styles.articlesContainer}
+          />
         )}
-      </ScrollView>
+      </View>
       
       {/* Article Detail Modal */}
       <Modal
+        visible={modalVisible}
         animationType="slide"
         transparent={false}
-        visible={modalVisible}
         onRequestClose={() => setModalVisible(false)}
       >
-        <SafeAreaView style={styles.modalContainer}>
-          <View style={styles.modalHeader}>
-            <TouchableOpacity onPress={() => setModalVisible(false)} style={styles.backButton}>
-              <Ionicons name="arrow-back" size={24} color={COLORS.text} />
-            </TouchableOpacity>
-            <View style={styles.modalHeaderRight}>
-              <TouchableOpacity style={styles.shareButton}>
-                <Ionicons name="share-outline" size={24} color={COLORS.text} />
+        <SafeAreaView style={[styles.safeArea, { backgroundColor: colors.background }]}>
+          <View style={[styles.modalContainer, { backgroundColor: colors.background }]}>
+            {/* Modal Header */}
+            <View style={styles.modalHeader}>
+              <TouchableOpacity 
+                style={[styles.backButton, { backgroundColor: colors.inputBg }]}
+                onPress={() => setModalVisible(false)}
+              >
+                <Ionicons name="arrow-back" size={22} color={colors.text} />
               </TouchableOpacity>
-              <TouchableOpacity style={styles.bookmarkButton}>
-                <Ionicons name="bookmark-outline" size={24} color={COLORS.text} />
-              </TouchableOpacity>
+              <View style={styles.modalHeaderRight}>
+                <TouchableOpacity style={[styles.shareButton, { backgroundColor: colors.inputBg }]}>
+                  <Ionicons name="share-outline" size={22} color={colors.text} />
+                </TouchableOpacity>
+                <TouchableOpacity style={[styles.bookmarkButton, { backgroundColor: colors.inputBg }]}>
+                  <Ionicons name="bookmark-outline" size={22} color={colors.text} />
+                </TouchableOpacity>
+              </View>
             </View>
-          </View>
-          
-          {selectedArticle && (
-            <ScrollView style={styles.modalBody} contentContainerStyle={styles.modalBodyContent}>
-              <Image source={{ uri: selectedArticle.image }} style={styles.modalImage} />
-              
-              <View style={styles.articleMetaDetail}>
-                <View style={styles.categoryBadge}>
-                  <Text style={styles.categoryText}>{selectedArticle.category}</Text>
-                </View>
-                <Text style={styles.readTime}>{selectedArticle.readTime} min read</Text>
-              </View>
-              
-              <Text style={styles.modalTitle}>{selectedArticle.title}</Text>
-              
-              <View style={styles.authorSection}>
-                <Text style={styles.authorName}>By {selectedArticle.author}</Text>
-                <Text style={styles.authorTitle}>{selectedArticle.authorTitle}</Text>
-                <Text style={styles.publishDate}>Published on {selectedArticle.date}</Text>
-              </View>
-              
-              <View style={styles.contentContainer}>
-                {renderFormattedContent(selectedArticle.content)}
-              </View>
-              
-              <View style={styles.tagsContainer}>
-                <Text style={styles.tagsTitle}>Related Topics:</Text>
-                <View style={styles.tagsList}>
-                  {selectedArticle.tags.map((tag, index) => (
-                    <View key={index} style={styles.tagBadge}>
-                      <Text style={styles.tagText}>{tag}</Text>
+            
+            {selectedArticle && (
+              <ScrollView style={styles.modalContent} showsVerticalScrollIndicator={false}>
+                <Image 
+                  source={{ uri: selectedArticle.image }} 
+                  style={styles.modalImage}
+                />
+                
+                <View style={styles.articleDetailContainer}>
+                  <View style={styles.articleDetailHeader}>
+                    <Text style={[styles.modalCategory, { color: colors.primary }]}>
+                      {selectedArticle.category}
+                    </Text>
+                    <View style={styles.readTimeContainer}>
+                      <Ionicons name="time-outline" size={14} color={colors.textSecondary} />
+                      <Text style={[styles.modalReadTime, { color: colors.textSecondary }]}>
+                        {selectedArticle.readTime} min read
+                      </Text>
                     </View>
-                  ))}
-                </View>
-              </View>
-              
-              <View style={styles.relatedArticles}>
-                <Text style={styles.relatedTitle}>You might also like:</Text>
-                <ScrollView 
-                  horizontal 
-                  showsHorizontalScrollIndicator={false}
-                  contentContainerStyle={styles.relatedArticlesContent}
-                >
-                  {articles
-                    .filter(a => a.id !== selectedArticle.id)
-                    .slice(0, 3)
-                    .map(article => (
-                      <TouchableOpacity 
-                        key={article.id} 
-                        style={styles.relatedArticleCard}
-                        onPress={() => {
-                          setSelectedArticle(article);
-                          // Scroll back to top when changing articles
-                          if (this.scrollView) {
-                            this.scrollView.scrollTo({ x: 0, y: 0, animated: true });
-                          }
-                        }}
-                      >
-                        <Image source={{ uri: article.image }} style={styles.relatedArticleImage} />
-                        <View style={styles.relatedArticleContent}>
-                          <Text style={styles.relatedArticleTitle} numberOfLines={2}>{article.title}</Text>
-                          <Text style={styles.relatedArticleReadTime}>{article.readTime} min read</Text>
+                  </View>
+                  
+                  <Text style={[styles.modalTitle, { color: colors.text }]}>
+                    {selectedArticle.title}
+                  </Text>
+                  
+                  <View style={styles.authorContainer}>
+                    <View style={[styles.authorAvatar, { backgroundColor: colors.primary }]}>
+                      <Text style={[styles.authorInitial, { color: colors.secondary }]}>
+                        {selectedArticle.author.charAt(0)}
+                      </Text>
+                    </View>
+                    <View>
+                      <Text style={[styles.authorName, { color: colors.text }]}>
+                        {selectedArticle.author}
+                      </Text>
+                      <Text style={[styles.authorTitle, { color: colors.textSecondary }]}>
+                        {selectedArticle.authorTitle}
+                      </Text>
+                    </View>
+                  </View>
+                  
+                  <View style={[styles.contentDivider, { backgroundColor: colors.border }]} />
+                  
+                  <View style={styles.articleContent}>
+                    {renderFormattedContent(selectedArticle.content)}
+                  </View>
+                  
+                  <View style={styles.tagContainer}>
+                    <Text style={[styles.tagLabel, { color: colors.textSecondary }]}>Tags:</Text>
+                    <View style={styles.tagList}>
+                      {selectedArticle.tags.map((tag, index) => (
+                        <View 
+                          key={index} 
+                          style={[styles.tagChip, { backgroundColor: colors.inputBg }]}
+                        >
+                          <Text style={[styles.tagText, { color: colors.text }]}>{tag}</Text>
                         </View>
-                      </TouchableOpacity>
-                    ))
-                  }
-                </ScrollView>
-              </View>
-            </ScrollView>
-          )}
+                      ))}
+                    </View>
+                  </View>
+                </View>
+              </ScrollView>
+            )}
+          </View>
         </SafeAreaView>
       </Modal>
     </SafeAreaView>
@@ -783,15 +818,14 @@ function LearnScreen() {
 const styles = StyleSheet.create({
   safeArea: {
     flex: 1,
-    backgroundColor: COLORS.background,
   },
   container: {
     flex: 1,
-    backgroundColor: COLORS.background,
+    padding: 16,
   },
-  contentContainer: {
-    padding: 20,
-    paddingBottom: 40,
+  header: {
+    alignItems: 'center',
+    marginBottom: 20,
   },
   loadingContainer: {
     flex: 1,
@@ -801,76 +835,54 @@ const styles = StyleSheet.create({
   loadingText: {
     marginTop: 10,
     fontSize: 16,
-    color: COLORS.text,
-  },
-  header: {
-    alignItems: 'center',
-    marginBottom: 20,
-  },
-  title: {
-    fontSize: 24,
-    fontWeight: 'bold',
-    color: COLORS.text,
-    marginTop: 12,
   },
   searchContainer: {
+    marginBottom: 16,
+  },
+  searchBar: {
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: COLORS.cardBg,
-    borderRadius: 12,
     paddingHorizontal: 16,
-    marginBottom: 16,
-    height: 50,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 1 },
-    shadowOpacity: 0.1,
-    shadowRadius: 2,
-    elevation: 2,
-  },
-  searchIcon: {
-    marginRight: 10,
+    height: 48,
+    borderRadius: 24,
+    borderWidth: 1,
   },
   searchInput: {
     flex: 1,
-    height: '100%',
     fontSize: 16,
-    color: COLORS.text,
+    marginLeft: 10,
+    height: 40,
   },
   categoriesContainer: {
     marginBottom: 16,
   },
   categoriesContent: {
-    paddingRight: 20,
+    paddingRight: 16,
   },
-  categoryButton: {
+  categoryChip: {
     paddingHorizontal: 16,
     paddingVertical: 8,
     borderRadius: 20,
-    marginRight: 8,
-    backgroundColor: COLORS.inputBg,
+    marginRight: 10,
+    borderWidth: 1,
   },
-  categoryButtonActive: {
-    backgroundColor: COLORS.primary,
+  categoryChipSelected: {
+    borderWidth: 0,
   },
-  categoryButtonText: {
+  categoryText: {
     fontSize: 14,
-    color: COLORS.textSecondary,
     fontWeight: '500',
   },
-  categoryButtonTextActive: {
-    color: COLORS.secondary,
+  categoryTextSelected: {
+    fontWeight: '600',
   },
-  resultsText: {
-    fontSize: 14,
-    color: COLORS.textSecondary,
-    marginBottom: 16,
+  articlesContainer: {
+    paddingBottom: 20,
   },
   articleCard: {
-    backgroundColor: COLORS.cardBg,
     borderRadius: 16,
+    marginBottom: 16,
     overflow: 'hidden',
-    marginBottom: 20,
-    shadowColor: '#000',
     shadowOffset: { width: 0, height: 2 },
     shadowOpacity: 0.1,
     shadowRadius: 4,
@@ -880,77 +892,60 @@ const styles = StyleSheet.create({
     width: '100%',
     height: 180,
   },
-  articleContent: {
+  articleCardContent: {
     padding: 16,
   },
-  articleMeta: {
+  articleCardHeader: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
     marginBottom: 8,
   },
-  categoryBadge: {
-    backgroundColor: COLORS.primary + '20', // 20% opacity
-    paddingHorizontal: 8,
-    paddingVertical: 4,
-    borderRadius: 4,
-  },
-  categoryText: {
-    color: COLORS.primary,
-    fontSize: 12,
+  articleCategory: {
+    fontSize: 14,
     fontWeight: '600',
+  },
+  readTimeContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
   },
   readTime: {
     fontSize: 12,
-    color: COLORS.textSecondary,
+    marginLeft: 4,
   },
   articleTitle: {
     fontSize: 18,
     fontWeight: 'bold',
-    color: COLORS.text,
     marginBottom: 8,
-    lineHeight: 24,
   },
   articleSummary: {
     fontSize: 14,
-    color: COLORS.textSecondary,
     lineHeight: 20,
-    marginBottom: 16,
-  },
-  articleFooter: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-  },
-  articleDate: {
-    fontSize: 12,
-    color: COLORS.textSecondary,
-  },
-  readMoreText: {
-    fontSize: 14,
-    color: COLORS.primary,
-    fontWeight: '600',
   },
   noResultsContainer: {
-    alignItems: 'center',
+    flex: 1,
     justifyContent: 'center',
-    padding: 40,
+    alignItems: 'center',
+    paddingVertical: 40,
   },
   noResultsText: {
-    fontSize: 18,
-    fontWeight: '600',
-    color: COLORS.text,
-    marginTop: 16,
-    marginBottom: 8,
-  },
-  noResultsSubtext: {
-    fontSize: 14,
-    color: COLORS.textSecondary,
+    fontSize: 16,
     textAlign: 'center',
+    marginVertical: 20,
   },
+  resetButton: {
+    paddingHorizontal: 20,
+    paddingVertical: 10,
+    borderRadius: 20,
+  },
+  resetButtonText: {
+    fontSize: 16,
+    fontWeight: '500',
+  },
+  
+  // Modal styles
   modalContainer: {
     flex: 1,
-    backgroundColor: COLORS.background,
   },
   modalHeader: {
     flexDirection: 'row',
@@ -958,175 +953,140 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     paddingHorizontal: 16,
     paddingVertical: 10,
-    borderBottomWidth: 1,
-    borderBottomColor: COLORS.border,
-    backgroundColor: COLORS.cardBg,
   },
   backButton: {
     padding: 8,
+    borderRadius: 20,
   },
   modalHeaderRight: {
     flexDirection: 'row',
   },
   shareButton: {
     padding: 8,
-    marginRight: 8,
+    borderRadius: 20,
+    marginRight: 12,
   },
   bookmarkButton: {
     padding: 8,
+    borderRadius: 20,
   },
-  modalBody: {
+  modalContent: {
     flex: 1,
-  },
-  modalBodyContent: {
-    paddingBottom: 40,
   },
   modalImage: {
     width: '100%',
-    height: 240,
+    height: 220,
+    resizeMode: 'cover',
   },
-  articleMetaDetail: {
+  articleDetailContainer: {
+    padding: 20,
+  },
+  articleDetailHeader: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
-    paddingHorizontal: 20,
-    paddingTop: 16,
+    marginBottom: 12,
+  },
+  modalCategory: {
+    fontSize: 14,
+    fontWeight: '600',
+  },
+  modalReadTime: {
+    fontSize: 14,
+    marginLeft: 4,
   },
   modalTitle: {
     fontSize: 24,
     fontWeight: 'bold',
-    color: COLORS.text,
-    paddingHorizontal: 20,
-    paddingTop: 16,
-    paddingBottom: 8,
+    marginBottom: 16,
     lineHeight: 32,
   },
-  authorSection: {
-    paddingHorizontal: 20,
-    paddingBottom: 20,
-    borderBottomWidth: 1,
-    borderBottomColor: COLORS.border,
+  authorContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginBottom: 20,
+  },
+  authorAvatar: {
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginRight: 12,
+  },
+  authorInitial: {
+    fontSize: 18,
+    fontWeight: 'bold',
   },
   authorName: {
     fontSize: 16,
     fontWeight: '600',
-    color: COLORS.text,
   },
   authorTitle: {
     fontSize: 14,
-    color: COLORS.textSecondary,
-    marginBottom: 4,
   },
-  publishDate: {
-    fontSize: 12,
-    color: COLORS.textSecondary,
+  contentDivider: {
+    height: 1,
+    marginBottom: 20,
   },
-  contentContainer: {
-    padding: 20,
+  articleContent: {
+    marginBottom: 20,
   },
-  contentHeader: {
+  contentHeading: {
     fontSize: 18,
     fontWeight: 'bold',
-    color: COLORS.text,
-    marginTop: 20,
-    marginBottom: 10,
+    marginTop: 16,
+    marginBottom: 12,
   },
-  contentText: {
+  contentParagraph: {
     fontSize: 16,
-    color: COLORS.text,
     lineHeight: 24,
-    marginBottom: 16,
+    marginBottom: 12,
   },
-  listContainer: {
-    marginBottom: 16,
-  },
-  listItem: {
+  listItemContainer: {
     flexDirection: 'row',
     marginBottom: 8,
-    paddingLeft: 8,
+    paddingLeft: 10,
   },
-  bulletPoint: {
+  listBullet: {
     fontSize: 16,
-    color: COLORS.primary,
-    marginRight: 8,
-    lineHeight: 24,
+    marginRight: 10,
+  },
+  listNumber: {
+    fontSize: 16,
+    marginRight: 10,
   },
   listItemText: {
     flex: 1,
     fontSize: 16,
-    color: COLORS.text,
     lineHeight: 24,
   },
-  tagsContainer: {
-    paddingHorizontal: 20,
-    marginBottom: 20,
-  },
-  tagsTitle: {
+  boldText: {
+    fontWeight: 'bold',
     fontSize: 16,
-    fontWeight: '600',
-    color: COLORS.text,
-    marginBottom: 10,
+    marginVertical: 8,
   },
-  tagsList: {
+  tagContainer: {
+    marginTop: 10,
+  },
+  tagLabel: {
+    fontSize: 14,
+    marginBottom: 8,
+  },
+  tagList: {
     flexDirection: 'row',
     flexWrap: 'wrap',
   },
-  tagBadge: {
-    backgroundColor: COLORS.inputBg,
-    paddingHorizontal: 10,
+  tagChip: {
+    paddingHorizontal: 12,
     paddingVertical: 6,
-    borderRadius: 20,
+    borderRadius: 16,
     marginRight: 8,
     marginBottom: 8,
   },
   tagText: {
     fontSize: 14,
-    color: COLORS.text,
-  },
-  relatedArticles: {
-    paddingHorizontal: 20,
-    marginBottom: 30,
-  },
-  relatedTitle: {
-    fontSize: 18,
-    fontWeight: '600',
-    color: COLORS.text,
-    marginBottom: 16,
-  },
-  relatedArticlesContent: {
-    paddingRight: 20,
-  },
-  relatedArticleCard: {
-    width: 200,
-    backgroundColor: COLORS.cardBg,
-    borderRadius: 12,
-    overflow: 'hidden',
-    marginRight: 16,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 1 },
-    shadowOpacity: 0.1,
-    shadowRadius: 2,
-    elevation: 2,
-  },
-  relatedArticleImage: {
-    width: '100%',
-    height: 120,
-  },
-  relatedArticleContent: {
-    padding: 12,
-  },
-  relatedArticleTitle: {
-    fontSize: 14,
-    fontWeight: '600',
-    color: COLORS.text,
-    marginBottom: 4,
-    lineHeight: 20,
-  },
-  relatedArticleReadTime: {
-    fontSize: 12,
-    color: COLORS.textSecondary,
-  },
+  }
 });
 
-// Wrap the component with the auth HOC
 export default withAuth(LearnScreen); 

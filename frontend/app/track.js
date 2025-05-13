@@ -18,6 +18,8 @@ import { Ionicons } from '@expo/vector-icons';
 import { router } from 'expo-router';
 import Logo from '../services/logoComponent';
 import { withAuth, useAuth } from '../services/authContext';
+import { useTheme } from '../services/themeContext';
+import { getThemedStyles } from '../services/themeHelper';
 
 // PEAKMODE color theme based on logo
 const COLORS = {
@@ -145,6 +147,9 @@ const generateMockHistory = () => {
 
 function TrackScreen() {
   const { user } = useAuth();
+  const { colors, isDarkMode } = useTheme();
+  const themedStyles = getThemedStyles(colors);
+  
   const [loading, setLoading] = useState(true);
   const [supplements, setSupplements] = useState([]);
   const [supplementHistory, setSupplementHistory] = useState({});
@@ -212,11 +217,11 @@ function TrackScreen() {
     const dateStr = date.toISOString().split('T')[0];
     const dayData = supplementHistory[dateStr];
     
-    if (!dayData) return styles.dayIncomplete;
+    if (!dayData) return [styles.dayIncomplete, { backgroundColor: colors.border }];
     
-    if (dayData.completion >= 90) return styles.dayComplete;
-    if (dayData.completion >= 50) return styles.dayPartial;
-    return styles.dayIncomplete;
+    if (dayData.completion >= 90) return [styles.dayComplete, { backgroundColor: colors.success }];
+    if (dayData.completion >= 50) return [styles.dayPartial, { backgroundColor: colors.primary }];
+    return [styles.dayIncomplete, { backgroundColor: colors.border }];
   };
 
   // Format the current time for display
@@ -228,10 +233,10 @@ function TrackScreen() {
 
   if (loading) {
     return (
-      <SafeAreaView style={styles.safeArea}>
-        <View style={styles.loadingContainer}>
-          <ActivityIndicator size="large" color={COLORS.primary} />
-          <Text style={styles.loadingText}>Loading supplement data...</Text>
+      <SafeAreaView style={[styles.safeArea, { backgroundColor: colors.background }]}>
+        <View style={[styles.loadingContainer, { backgroundColor: colors.background }]}>
+          <ActivityIndicator size="large" color={colors.primary} />
+          <Text style={[styles.loadingText, { color: colors.textSecondary }]}>Loading supplement data...</Text>
         </View>
       </SafeAreaView>
     );
@@ -242,17 +247,20 @@ function TrackScreen() {
   const eveningSupplements = supplements.filter(s => s.schedule.includes('evening'));
 
   return (
-    <SafeAreaView style={styles.safeArea}>
-      <ScrollView style={styles.container} contentContainerStyle={styles.contentContainer}>
+    <SafeAreaView style={[styles.safeArea, { backgroundColor: colors.background }]}>
+      <ScrollView 
+        style={[styles.container, { backgroundColor: colors.background }]} 
+        contentContainerStyle={styles.contentContainer}
+      >
         {/* Header Section */}
         <View style={styles.header}>
           <Logo width={150} />
-          <Text style={styles.title}>Track Supplements</Text>
+          <Text style={[styles.title, { color: colors.text }]}>Track Supplements</Text>
         </View>
         
         {/* Calendar Section */}
-        <View style={styles.calendarCard}>
-          <Text style={styles.sectionTitle}>Tracking History</Text>
+        <View style={[styles.calendarCard, { backgroundColor: colors.cardBg, shadowColor: colors.text }]}>
+          <Text style={[styles.sectionTitle, { color: colors.text }]}>Tracking History</Text>
           
           <View style={styles.calendarContainer}>
             {generateCalendarDates().map((date, index) => (
@@ -260,13 +268,14 @@ function TrackScreen() {
                 key={index} 
                 style={[
                   styles.calendarDay,
-                  date.toISOString().split('T')[0] === selectedDate && styles.selectedDay
+                  date.toISOString().split('T')[0] === selectedDate && 
+                    [styles.selectedDay, { borderColor: colors.primary }]
                 ]}
                 onPress={() => setSelectedDate(date.toISOString().split('T')[0])}
               >
-                <Text style={styles.dayName}>{DAYS[date.getDay()]}</Text>
-                <View style={[styles.dayCircle, getDayStatusClass(date)]}>
-                  <Text style={styles.dayNumber}>{date.getDate()}</Text>
+                <Text style={[styles.dayName, { color: colors.textSecondary }]}>{DAYS[date.getDay()]}</Text>
+                <View style={[styles.dayCircle, ...getDayStatusClass(date)]}>
+                  <Text style={[styles.dayNumber, { color: colors.secondary }]}>{date.getDate()}</Text>
                 </View>
               </TouchableOpacity>
             ))}
@@ -274,34 +283,34 @@ function TrackScreen() {
           
           <View style={styles.legendContainer}>
             <View style={styles.legendItem}>
-              <View style={[styles.legendDot, {backgroundColor: COLORS.success}]} />
-              <Text style={styles.legendText}>Complete</Text>
+              <View style={[styles.legendDot, {backgroundColor: colors.success}]} />
+              <Text style={[styles.legendText, { color: colors.textSecondary }]}>Complete</Text>
             </View>
             <View style={styles.legendItem}>
-              <View style={[styles.legendDot, {backgroundColor: COLORS.primary}]} />
-              <Text style={styles.legendText}>Partial</Text>
+              <View style={[styles.legendDot, {backgroundColor: colors.primary}]} />
+              <Text style={[styles.legendText, { color: colors.textSecondary }]}>Partial</Text>
             </View>
             <View style={styles.legendItem}>
-              <View style={[styles.legendDot, {backgroundColor: COLORS.border}]} />
-              <Text style={styles.legendText}>Missed</Text>
+              <View style={[styles.legendDot, {backgroundColor: colors.border}]} />
+              <Text style={[styles.legendText, { color: colors.textSecondary }]}>Missed</Text>
             </View>
           </View>
         </View>
         
         {/* Today's Completion */}
-        <View style={styles.completionCard}>
+        <View style={[styles.completionCard, { backgroundColor: colors.cardBg, shadowColor: colors.text }]}>
           <View style={styles.completionHeader}>
-            <Text style={styles.completionTitle}>Today's Progress</Text>
-            <View style={styles.completionCircle}>
-              <Text style={styles.completionPercentage}>{getTodayCompletionPercentage()}%</Text>
+            <Text style={[styles.completionTitle, { color: colors.text }]}>Today's Progress</Text>
+            <View style={[styles.completionCircle, { backgroundColor: colors.primary }]}>
+              <Text style={[styles.completionPercentage, { color: colors.secondary }]}>{getTodayCompletionPercentage()}%</Text>
             </View>
           </View>
           
-          <View style={styles.progressBarContainer}>
-            <View style={[styles.progressBar, {width: `${getTodayCompletionPercentage()}%`}]} />
+          <View style={[styles.progressBarContainer, { backgroundColor: colors.inputBg }]}>
+            <View style={[styles.progressBar, {width: `${getTodayCompletionPercentage()}%`, backgroundColor: colors.primary}]} />
           </View>
           
-          <Text style={styles.completionText}>
+          <Text style={[styles.completionText, { color: colors.textSecondary }]}>
             {getTodayCompletionPercentage() < 100 
               ? `You've taken ${supplements.filter(s => s.takenToday).length} of ${supplements.length} supplements today.`
               : "Great job! You've taken all your supplements today."}
@@ -309,42 +318,64 @@ function TrackScreen() {
         </View>
         
         {/* View Toggle */}
-        <View style={styles.viewToggleContainer}>
+        <View style={[styles.viewToggleContainer, { backgroundColor: colors.inputBg }]}>
           <TouchableOpacity 
-            style={[styles.viewToggleButton, stackView && styles.viewToggleActive]} 
+            style={[
+              styles.viewToggleButton, 
+              stackView && [styles.viewToggleActive, { backgroundColor: colors.cardBg }]
+            ]} 
             onPress={() => setStackView(true)}
           >
             <Ionicons
               name="layers-outline"
               size={20}
-              color={stackView ? COLORS.primary : COLORS.textSecondary}
+              color={stackView ? colors.primary : colors.textSecondary}
             />
-            <Text style={[styles.viewToggleText, stackView && styles.viewToggleTextActive]}>Stack View</Text>
+            <Text 
+              style={[
+                styles.viewToggleText, 
+                { color: colors.textSecondary },
+                stackView && { color: colors.primary }
+              ]}
+            >
+              Stack View
+            </Text>
           </TouchableOpacity>
           
           <TouchableOpacity 
-            style={[styles.viewToggleButton, !stackView && styles.viewToggleActive]} 
+            style={[
+              styles.viewToggleButton, 
+              !stackView && [styles.viewToggleActive, { backgroundColor: colors.cardBg }]
+            ]} 
             onPress={() => setStackView(false)}
           >
             <Ionicons
               name="list-outline"
               size={20}
-              color={!stackView ? COLORS.primary : COLORS.textSecondary}
+              color={!stackView ? colors.primary : colors.textSecondary}
             />
-            <Text style={[styles.viewToggleText, !stackView && styles.viewToggleTextActive]}>List View</Text>
+            <Text 
+              style={[
+                styles.viewToggleText, 
+                { color: colors.textSecondary },
+                !stackView && { color: colors.primary }
+              ]}
+            >
+              List View
+            </Text>
           </TouchableOpacity>
         </View>
         
         {/* Visual Supplement Stack */}
         {stackView ? (
           <View style={styles.visualStackContainer}>
-            <Text style={styles.sectionTitle}>Your Supplement Stack</Text>
-            <Text style={styles.timeLabel}>Good {formatCurrentTime()}</Text>
+            <Text style={[styles.sectionTitle, { color: colors.text }]}>Your Supplement Stack</Text>
+            <Text style={[styles.timeLabel, { color: colors.textSecondary }]}>Good {formatCurrentTime()}</Text>
             
             <View style={styles.stackWrapper}>
               {/* Morning stack */}
               <View style={styles.timeStackContainer}>
-                <Text style={styles.stackTimeLabel}>Morning</Text>
+                <Text style={[styles.stackTimeLabel, { color: colors.text }]}>Morning</Text>
                 {morningSupplements.length > 0 ? (
                   <View style={styles.visualStack}>
                     {morningSupplements.map((supplement, index) => (
@@ -375,22 +406,22 @@ function TrackScreen() {
                           <Ionicons
                             name={supplement.takenToday ? "checkmark-circle" : "checkmark-circle-outline"}
                             size={28}
-                            color={supplement.takenToday ? COLORS.secondary : "rgba(255,255,255,0.8)"}
+                            color={supplement.takenToday ? colors.secondary : "rgba(255,255,255,0.8)"}
                           />
                         </TouchableOpacity>
                       </TouchableOpacity>
                     ))}
                   </View>
                 ) : (
-                  <View style={styles.emptyStack}>
-                    <Text style={styles.emptyStackText}>No morning supplements</Text>
+                  <View style={[styles.emptyStack, { backgroundColor: colors.inputBg }]}>
+                    <Text style={[styles.emptyStackText, { color: colors.textSecondary }]}>No morning supplements</Text>
                   </View>
                 )}
               </View>
               
               {/* Evening stack */}
               <View style={styles.timeStackContainer}>
-                <Text style={styles.stackTimeLabel}>Evening</Text>
+                <Text style={[styles.stackTimeLabel, { color: colors.text }]}>Evening</Text>
                 {eveningSupplements.length > 0 ? (
                   <View style={styles.visualStack}>
                     {eveningSupplements.map((supplement, index) => (
@@ -421,15 +452,15 @@ function TrackScreen() {
                           <Ionicons
                             name={supplement.takenToday ? "checkmark-circle" : "checkmark-circle-outline"}
                             size={28}
-                            color={supplement.takenToday ? COLORS.secondary : "rgba(255,255,255,0.8)"}
+                            color={supplement.takenToday ? colors.secondary : "rgba(255,255,255,0.8)"}
                           />
                         </TouchableOpacity>
                       </TouchableOpacity>
                     ))}
                   </View>
                 ) : (
-                  <View style={styles.emptyStack}>
-                    <Text style={styles.emptyStackText}>No evening supplements</Text>
+                  <View style={[styles.emptyStack, { backgroundColor: colors.inputBg }]}>
+                    <Text style={[styles.emptyStackText, { color: colors.textSecondary }]}>No evening supplements</Text>
                   </View>
                 )}
               </View>
@@ -438,20 +469,24 @@ function TrackScreen() {
         ) : (
           // List View
           <View style={styles.listContainer}>
-            <Text style={styles.sectionTitle}>Your Supplements</Text>
+            <Text style={[styles.sectionTitle, { color: colors.text }]}>Your Supplements</Text>
             
             {supplements.map(supplement => (
               <TouchableOpacity
                 key={supplement.id}
-                style={styles.supplementListItem}
+                style={[styles.supplementListItem, { 
+                  backgroundColor: colors.cardBg,
+                  borderColor: colors.border,
+                  shadowColor: colors.text 
+                }]}
                 onPress={() => openSupplementDetail(supplement)}
               >
                 <View style={styles.supplementInfo}>
                   <Image source={{ uri: supplement.image }} style={styles.supplementImage} />
                   <View style={styles.supplementDetails}>
-                    <Text style={styles.supplementName}>{supplement.name}</Text>
-                    <Text style={styles.supplementDosage}>{supplement.dosage}</Text>
-                    <Text style={styles.supplementTime}>
+                    <Text style={[styles.supplementName, { color: colors.text }]}>{supplement.name}</Text>
+                    <Text style={[styles.supplementDosage, { color: colors.textSecondary }]}>{supplement.dosage}</Text>
+                    <Text style={[styles.supplementTime, { color: colors.textSecondary }]}>
                       {supplement.schedule.includes('morning') ? 'Morning' : ''}
                       {supplement.schedule.includes('morning') && supplement.schedule.includes('evening') ? ' & ' : ''}
                       {supplement.schedule.includes('evening') ? 'Evening' : ''}
@@ -460,13 +495,13 @@ function TrackScreen() {
                 </View>
                 
                 <TouchableOpacity 
-                  style={[styles.listCheckButton, supplement.takenToday && styles.listCheckedButton]}
+                  style={styles.listCheckButton}
                   onPress={() => toggleSupplementTaken(supplement.id)}
                 >
                   <Ionicons
                     name={supplement.takenToday ? "checkmark-circle" : "checkmark-circle-outline"}
                     size={28}
-                    color={supplement.takenToday ? COLORS.success : COLORS.border}
+                    color={supplement.takenToday ? colors.success : colors.border}
                   />
                 </TouchableOpacity>
               </TouchableOpacity>
@@ -475,9 +510,9 @@ function TrackScreen() {
         )}
         
         {/* Add Button */}
-        <TouchableOpacity style={styles.addButton}>
-          <Ionicons name="add" size={30} color={COLORS.secondary} />
-          <Text style={styles.addButtonText}>Add Supplement</Text>
+        <TouchableOpacity style={[styles.addButton, { backgroundColor: colors.primary }]}>
+          <Ionicons name="add" size={30} color={colors.secondary} />
+          <Text style={[styles.addButtonText, { color: colors.secondary }]}>Add Supplement</Text>
         </TouchableOpacity>
       </ScrollView>
       
@@ -488,80 +523,98 @@ function TrackScreen() {
         visible={modalVisible}
         onRequestClose={() => setModalVisible(false)}
       >
-        <View style={styles.modalOverlay}>
-          <View style={styles.modalContent}>
+        <View style={[styles.modalOverlay, { backgroundColor: 'rgba(0,0,0,0.5)' }]}>
+          <View style={[styles.modalContent, { backgroundColor: colors.cardBg }]}>
             {selectedSupplement && (
               <>
-                <View style={styles.modalHeader}>
-                  <Text style={styles.modalTitle}>{selectedSupplement.name}</Text>
+                <View style={[styles.modalHeader, { borderBottomColor: colors.border }]}>
+                  <Text style={[styles.modalTitle, { color: colors.text }]}>{selectedSupplement.name}</Text>
                   <TouchableOpacity onPress={() => setModalVisible(false)}>
-                    <Ionicons name="close" size={24} color={COLORS.text} />
+                    <Ionicons name="close" size={24} color={colors.text} />
                   </TouchableOpacity>
                 </View>
                 
-                <View style={styles.modalBody}>
-                  <Image source={{ uri: selectedSupplement.image }} style={styles.modalImage} />
-                  
-                  <View style={styles.modalDetailRow}>
-                    <Text style={styles.modalLabel}>Dosage:</Text>
-                    <Text style={styles.modalValue}>{selectedSupplement.dosage}</Text>
+                <ScrollView style={styles.modalBody}>
+                  <View style={[styles.supplementBanner, { backgroundColor: selectedSupplement.color }]}>
+                    <Image source={{ uri: selectedSupplement.image }} style={styles.modalImage} />
+                    <View style={styles.bannerContent}>
+                      <Text style={styles.bannerText}>{selectedSupplement.category}</Text>
+                      <Text style={styles.bannerDosage}>{selectedSupplement.dosage}</Text>
+                    </View>
                   </View>
                   
-                  <View style={styles.modalDetailRow}>
-                    <Text style={styles.modalLabel}>Category:</Text>
-                    <Text style={styles.modalValue}>{selectedSupplement.category}</Text>
-                  </View>
-                  
-                  <View style={styles.modalDetailRow}>
-                    <Text style={styles.modalLabel}>Schedule:</Text>
-                    <Text style={styles.modalValue}>
-                      {selectedSupplement.schedule.map(s => s.charAt(0).toUpperCase() + s.slice(1)).join(' & ')}
+                  <View style={styles.modalSection}>
+                    <Text style={[styles.modalSectionTitle, { color: colors.text }]}>Description</Text>
+                    <Text style={[styles.modalDescription, { color: colors.text }]}>
+                      {selectedSupplement.description}
                     </Text>
                   </View>
                   
-                  <View style={styles.modalDetailRow}>
-                    <Text style={styles.modalLabel}>Streak:</Text>
-                    <Text style={styles.modalValue}>{selectedSupplement.streak} days</Text>
-                  </View>
-                  
-                  <View style={styles.modalDetailRow}>
-                    <Text style={styles.modalLabel}>Times Taken:</Text>
-                    <Text style={styles.modalValue}>{selectedSupplement.timesTaken} times</Text>
-                  </View>
-                  
-                  <Text style={styles.modalDescription}>{selectedSupplement.description}</Text>
-                  
-                  <View style={styles.reminderContainer}>
-                    <Text style={styles.reminderText}>Reminder</Text>
-                    <Switch
-                      value={selectedSupplement.reminder}
-                      onValueChange={() => {}}
-                      trackColor={{ false: COLORS.border, true: COLORS.primary }}
-                      thumbColor={COLORS.secondary}
-                    />
-                  </View>
-                  
-                  {selectedSupplement.reminder && (
-                    <View style={styles.reminderTimeContainer}>
-                      <Text style={styles.reminderTimeText}>Reminder Time: {selectedSupplement.reminderTime}</Text>
+                  <View style={styles.modalSection}>
+                    <Text style={[styles.modalSectionTitle, { color: colors.text }]}>Schedule</Text>
+                    <View style={styles.scheduleRow}>
+                      {selectedSupplement.schedule.includes('morning') && (
+                        <View style={[styles.scheduleTag, { backgroundColor: colors.inputBg }]}>
+                          <Ionicons name="sunny-outline" size={16} color={colors.primary} />
+                          <Text style={[styles.scheduleText, { color: colors.text }]}>Morning</Text>
+                        </View>
+                      )}
+                      {selectedSupplement.schedule.includes('evening') && (
+                        <View style={[styles.scheduleTag, { backgroundColor: colors.inputBg }]}>
+                          <Ionicons name="moon-outline" size={16} color={colors.primary} />
+                          <Text style={[styles.scheduleText, { color: colors.text }]}>Evening</Text>
+                        </View>
+                      )}
                     </View>
-                  )}
-                </View>
+                  </View>
+                  
+                  <View style={styles.modalSection}>
+                    <Text style={[styles.modalSectionTitle, { color: colors.text }]}>Status</Text>
+                    <View style={styles.statusRow}>
+                      <View style={styles.statusItem}>
+                        <Text style={[styles.statusValue, { color: colors.text }]}>{selectedSupplement.timesTaken}</Text>
+                        <Text style={[styles.statusLabel, { color: colors.textSecondary }]}>Times Taken</Text>
+                      </View>
+                      <View style={styles.statusItem}>
+                        <Text style={[styles.statusValue, { color: colors.text }]}>{selectedSupplement.streak}</Text>
+                        <Text style={[styles.statusLabel, { color: colors.textSecondary }]}>Day Streak</Text>
+                      </View>
+                    </View>
+                  </View>
+                  
+                  <View style={styles.modalSection}>
+                    <View style={styles.reminderRow}>
+                      <View style={styles.reminderTitleContainer}>
+                        <Text style={[styles.modalSectionTitle, { color: colors.text }]}>Reminders</Text>
+                        <Text style={[styles.reminderTime, { color: colors.textSecondary }]}>
+                          {selectedSupplement.reminder ? selectedSupplement.reminderTime : 'Off'}
+                        </Text>
+                      </View>
+                      <Switch
+                        value={selectedSupplement.reminder}
+                        onValueChange={() => {
+                          // In a real app, would toggle reminder settings
+                        }}
+                        trackColor={{ false: colors.border, true: colors.primary + '80' }}
+                        thumbColor={selectedSupplement.reminder ? colors.primary : colors.textSecondary}
+                      />
+                    </View>
+                  </View>
+                </ScrollView>
                 
-                <View style={styles.modalActions}>
+                <View style={[styles.modalActions, { borderTopColor: colors.border }]}>
                   <TouchableOpacity 
-                    style={[
-                      styles.actionButton, 
-                      selectedSupplement.takenToday ? styles.untakeButton : styles.takeButton
-                    ]}
+                    style={[styles.actionButton, { backgroundColor: selectedSupplement.takenToday ? colors.success : colors.primary }]}
                     onPress={() => {
                       toggleSupplementTaken(selectedSupplement.id);
                       setModalVisible(false);
                     }}
                   >
-                    <Text style={styles.actionButtonText}>
-                      {selectedSupplement.takenToday ? 'Mark as Not Taken' : 'Mark as Taken'}
-                    </Text>
+                    {selectedSupplement.takenToday ? (
+                      <Text style={[styles.actionButtonText, { color: colors.secondary }]}>Mark as Not Taken</Text>
+                    ) : (
+                      <Text style={[styles.actionButtonText, { color: colors.secondary }]}>Mark as Taken</Text>
+                    )}
                   </TouchableOpacity>
                 </View>
               </>
