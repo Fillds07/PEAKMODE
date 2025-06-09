@@ -1,4 +1,5 @@
 # PEAKMODE App
+# By: Omar Waseem and Felipe Da Silva
 
 PEAKMODE is an iOS app for energy management and wellness.
 
@@ -37,6 +38,8 @@ Open two terminal windows:
 
 # Terminal 2: Start the frontend (Expo) server
 ./run-frontend.sh
+Type i on the keyboard for IOS. Website and Andriod app is in progress.
+To access IOS, you will need to install Xcode to simulate an iphone app, or connect to your own iphone.
 ```
 
 ### Database Management
